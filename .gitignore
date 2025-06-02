@@ -1,0 +1,41 @@
+# Fichiers générés par Cargo
+target/
+Cargo.lock
+
+# Fichiers de configuration IDE et éditeurs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Fichiers de build et artefacts
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Fichiers de logs et caches
+*.log
+*.tmp
+*.cache
+
+# Fichiers de configuration locaux
+.env
+*.env.local
+
+# Fichiers de documentation générés
+doc/
+
+# Fichiers de dépendances externes
+vendor/
+
+# Fichiers de tests et de coverage
+*.profraw
+*.profdata
+coverage/
+
+# Fichiers de configuration de Rust
+rustfmt.toml
+clippy.toml
