@@ -10,11 +10,16 @@ pub enum TileType {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RobotType {
     Explorer,
+    EnergyCollector,
+    MineralCollector,
+    ScientificCollector,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RobotMode {
     Exploring,
+    Collecting,
+    ReturnToStation,
     Idle,
 }
 

@@ -13,25 +13,28 @@ use types::RobotType;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
     
-    let map = Map::new();
+    let mut map = Map::new();
     let mut robots = vec![
         Robot::new(map.station_x, map.station_y, RobotType::Explorer),
+        Robot::new(map.station_x, map.station_y, RobotType::EnergyCollector),
+        Robot::new(map.station_x, map.station_y, RobotType::MineralCollector),
+        Robot::new(map.station_x, map.station_y, RobotType::ScientificCollector),
     ];
     
-    for _iteration in 0..100 {
+    for _iteration in 0..500 {
         Display::render(&map, &robots)?;
         
         for robot in robots.iter_mut() {
-            robot.update(&map);
+            robot.update(&mut map);
             
             if robot.energy <= 0.0 {
                 robot.x = map.station_x;
                 robot.y = map.station_y;
-                robot.energy = robot.max_energy;
+                robot.energy = robot.max_energy / 2.0;
             }
         }
         
-        thread::sleep(Duration::from_millis(200));
+        thread::sleep(Duration::from_millis(300));
     }
     
     disable_raw_mode()?;
