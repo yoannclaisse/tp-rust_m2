@@ -5,7 +5,7 @@ use crossterm::{
     cursor::MoveTo,
     style::{Color, SetForegroundColor},
 };
-use crate::types::{TileType, MAP_SIZE};
+use crate::types::{TileType, MAP_SIZE, RobotType, RobotMode};
 use crate::map::Map;
 use crate::robot::Robot;
 
@@ -26,9 +26,9 @@ impl Display {
                 if x == map.station_x && y == map.station_y {
                     stdout.execute(SetForegroundColor(Color::Yellow))?;
                     print!("[]");
-                } else if robot_here.is_some() {
-                    stdout.execute(SetForegroundColor(Color::Red))?;
-                    print!("R ");
+                } else if let Some(robot) = robot_here {
+                    stdout.execute(SetForegroundColor(Color::AnsiValue(robot.get_display_color())))?;
+                    print!("{}:", robot.get_display_char());
                 } else {
                     match map.get_tile(x, y) {
                         TileType::Empty => {
@@ -57,11 +57,26 @@ impl Display {
             println!();
         }
         
-        stdout.execute(MoveTo(0, MAP_SIZE as u16 + 2))?;
-        stdout.execute(SetForegroundColor(Color::White))?;
         for (i, robot) in robots.iter().enumerate() {
-            println!("Robot {}: Position ({}, {}) | Énergie: {:.1}", 
-                    i + 1, robot.x, robot.y, robot.energy);
+            stdout.execute(MoveTo(0, MAP_SIZE as u16 + 1 + i as u16))?;
+            stdout.execute(SetForegroundColor(Color::AnsiValue(robot.get_display_color())))?;
+            
+            let robot_type = match robot.robot_type {
+                RobotType::Explorer => "Explorateur",
+                RobotType::EnergyCollector => "Collecteur d'énergie",
+                RobotType::MineralCollector => "Collecteur de minerais",
+                RobotType::ScientificCollector => "Collecteur scientifique",
+            };
+            
+            let mode = match robot.mode {
+                RobotMode::Exploring => "Exploration",
+                RobotMode::Collecting => "Collecte",
+                RobotMode::ReturnToStation => "Retour",
+                RobotMode::Idle => "Inactif",
+            };
+            
+            println!("Robot {}: {} | Énergie: {:.1} | Mode: {} | Min: {} | Sci: {}", 
+                    i + 1, robot_type, robot.energy, mode, robot.minerals, robot.scientific_data);
         }
         
         stdout.flush()?;
