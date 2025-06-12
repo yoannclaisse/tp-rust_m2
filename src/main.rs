@@ -17,15 +17,52 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     let mut map = Map::new();
     let mut station = Station::new();
+    
     let mut robots = vec![
-        Robot::new(map.station_x, map.station_y, RobotType::Explorer),
-        Robot::new(map.station_x, map.station_y, RobotType::EnergyCollector),
-        Robot::new(map.station_x, map.station_y, RobotType::MineralCollector),
-        Robot::new(map.station_x, map.station_y, RobotType::ScientificCollector),
+        Robot::new_with_memory(
+            map.station_x, 
+            map.station_y, 
+            RobotType::Explorer, 
+            1,
+            map.station_x, 
+            map.station_y,
+            station.global_memory.clone()
+        ),
+        Robot::new_with_memory(
+            map.station_x, 
+            map.station_y, 
+            RobotType::EnergyCollector, 
+            2,
+            map.station_x, 
+            map.station_y,
+            station.global_memory.clone()
+        ),
+        Robot::new_with_memory(
+            map.station_x, 
+            map.station_y, 
+            RobotType::MineralCollector, 
+            3,
+            map.station_x, 
+            map.station_y,
+            station.global_memory.clone()
+        ),
+        Robot::new_with_memory(
+            map.station_x, 
+            map.station_y, 
+            RobotType::ScientificCollector, 
+            4,
+            map.station_x, 
+            map.station_y,
+            station.global_memory.clone()
+        ),
     ];
+    
+    station.next_robot_id = 5;
     
     for _iteration in 0..500 {
         Display::render(&map, &station, &robots)?;
+        
+        station.tick();
         
         for robot in robots.iter_mut() {
             robot.update(&mut map, &mut station);
