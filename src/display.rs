@@ -8,11 +8,12 @@ use crossterm::{
 use crate::types::{TileType, MAP_SIZE, RobotType, RobotMode};
 use crate::map::Map;
 use crate::robot::Robot;
+use crate::station::Station;
 
 pub struct Display;
 
 impl Display {
-    pub fn render(map: &Map, robots: &Vec<Robot>) -> Result<()> {
+    pub fn render(map: &Map, station: &Station, robots: &Vec<Robot>) -> Result<()> {
         let mut stdout = stdout();
         
         stdout.execute(Clear(ClearType::All))?;
@@ -57,8 +58,14 @@ impl Display {
             println!();
         }
         
+        // Station status
+        stdout.execute(MoveTo(0, MAP_SIZE as u16 + 1))?;
+        stdout.execute(SetForegroundColor(Color::Yellow))?;
+        println!("Station: {}", station.get_status());
+        
+        // Robot status
         for (i, robot) in robots.iter().enumerate() {
-            stdout.execute(MoveTo(0, MAP_SIZE as u16 + 1 + i as u16))?;
+            stdout.execute(MoveTo(0, MAP_SIZE as u16 + 3 + i as u16))?;
             stdout.execute(SetForegroundColor(Color::AnsiValue(robot.get_display_color())))?;
             
             let robot_type = match robot.robot_type {
