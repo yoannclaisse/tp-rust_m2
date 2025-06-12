@@ -2,18 +2,21 @@ mod types;
 mod map;
 mod robot;
 mod display;
+mod station;
 
 use std::{thread, time::Duration};
 use crossterm::terminal::{enable_raw_mode, disable_raw_mode};
 use map::Map;
 use robot::Robot;
 use display::Display;
+use station::Station;
 use types::RobotType;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
     
     let mut map = Map::new();
+    let mut station = Station::new();
     let mut robots = vec![
         Robot::new(map.station_x, map.station_y, RobotType::Explorer),
         Robot::new(map.station_x, map.station_y, RobotType::EnergyCollector),
@@ -22,14 +25,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
     
     for _iteration in 0..500 {
-        Display::render(&map, &robots)?;
+        Display::render(&map, &station, &robots)?;
         
         for robot in robots.iter_mut() {
-            robot.update(&mut map);
+            robot.update(&mut map, &mut station);
             
             if robot.energy <= 0.0 {
-                robot.x = map.station_x;
-                robot.y = map.station_y;
+                robot.x = robot.home_station_x;
+                robot.y = robot.home_station_y;
                 robot.energy = robot.max_energy / 2.0;
             }
         }

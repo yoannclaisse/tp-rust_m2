@@ -1,8 +1,11 @@
 use crate::types::{MAP_SIZE, TileType, RobotType, RobotMode};
 use crate::map::Map;
+use crate::station::Station;
 use rand::prelude::*;
 use std::collections::{VecDeque, BinaryHeap, HashMap};
 use std::cmp::Ordering;
+
+// ... garder les mêmes structures Node, Ord, PartialOrd ...
 
 #[derive(Clone, Eq, PartialEq)]
 struct Node {
@@ -34,6 +37,8 @@ pub struct Robot {
     pub mode: RobotMode,
     pub memory: Vec<Vec<bool>>,
     pub target: Option<(usize, usize)>,
+    pub home_station_x: usize,
+    pub home_station_y: usize,
 }
 
 impl Robot {
@@ -56,6 +61,8 @@ impl Robot {
             mode: RobotMode::Exploring,
             memory: vec![vec![false; MAP_SIZE]; MAP_SIZE],
             target: None,
+            home_station_x: x,
+            home_station_y: y,
         }
     }
     
@@ -77,17 +84,19 @@ impl Robot {
         }
     }
     
-    pub fn update(&mut self, map: &mut Map) {
+    pub fn update(&mut self, map: &mut Map, station: &mut Station) {
         self.energy -= 0.1;
         self.update_memory();
         
         if self.should_return_to_station() {
             self.mode = RobotMode::ReturnToStation;
-            self.target = Some((map.station_x, map.station_y));
+            self.target = Some((self.home_station_x, self.home_station_y));
         }
         
-        if self.x == map.station_x && self.y == map.station_y {
+        if self.x == self.home_station_x && self.y == self.home_station_y {
+            // Recharge and deposit resources
             self.energy = self.max_energy;
+            station.deposit_resources(self.minerals, self.scientific_data);
             self.minerals = 0;
             self.scientific_data = 0;
             self.mode = RobotMode::Exploring;
@@ -110,7 +119,12 @@ impl Robot {
                 let tile = map.get_tile(self.x, self.y);
                 if self.can_collect(tile) {
                     self.collect_resource(map);
-                    self.mode = RobotMode::Exploring;
+                    // Look for more resources after collecting
+                    if let Some(resource_pos) = self.find_nearest_resource(map) {
+                        self.target = Some(resource_pos);
+                    } else {
+                        self.mode = RobotMode::Exploring;
+                    }
                 } else if let Some(target) = self.target {
                     self.move_towards_target(map);
                 }
@@ -118,13 +132,19 @@ impl Robot {
             RobotMode::ReturnToStation => {
                 if let Some(target) = self.target {
                     self.move_towards_target(map);
+                } else {
+                    self.mode = RobotMode::Idle;
                 }
             },
             RobotMode::Idle => {
-                self.mode = RobotMode::Exploring;
+                if self.robot_type == RobotType::Explorer {
+                    self.mode = RobotMode::Exploring;
+                }
             }
         }
     }
+    
+    // ... reste des méthodes identiques aux commits précédents ...
     
     fn should_return_to_station(&self) -> bool {
         if self.energy < self.max_energy * 0.3 {
