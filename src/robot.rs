@@ -1,11 +1,9 @@
 use crate::types::{MAP_SIZE, TileType, RobotType, RobotMode};
 use crate::map::Map;
-use crate::station::Station;
+use crate::station::{Station, TerrainData};
 use rand::prelude::*;
 use std::collections::{VecDeque, BinaryHeap, HashMap};
 use std::cmp::Ordering;
-
-// ... garder les mêmes structures Node, Ord, PartialOrd ...
 
 #[derive(Clone, Eq, PartialEq)]
 struct Node {
@@ -35,14 +33,64 @@ pub struct Robot {
     pub scientific_data: u32,
     pub robot_type: RobotType,
     pub mode: RobotMode,
-    pub memory: Vec<Vec<bool>>,
+    pub memory: Vec<Vec<TerrainData>>,
     pub target: Option<(usize, usize)>,
+    pub id: usize,
     pub home_station_x: usize,
     pub home_station_y: usize,
+    pub last_sync_time: u32,
 }
 
 impl Robot {
     pub fn new(x: usize, y: usize, robot_type: RobotType) -> Self {
+        let (max_energy, energy) = match robot_type {
+            RobotType::Explorer => (80.0, 80.0),
+            RobotType::EnergyCollector => (120.0, 120.0),
+            RobotType::MineralCollector => (100.0, 100.0),
+            RobotType::ScientificCollector => (60.0, 60.0),
+        };
+        
+        let mut memory = Vec::with_capacity(MAP_SIZE);
+        for _ in 0..MAP_SIZE {
+            let row = vec![
+                TerrainData {
+                    explored: false,
+                    timestamp: 0,
+                    robot_id: 0,
+                    robot_type: RobotType::Explorer,
+                }; 
+                MAP_SIZE
+            ];
+            memory.push(row);
+        }
+        
+        Self {
+            x,
+            y,
+            energy,
+            max_energy,
+            minerals: 0,
+            scientific_data: 0,
+            robot_type,
+            mode: RobotMode::Exploring,
+            memory,
+            target: None,
+            id: 0, // Will be set by station
+            home_station_x: x,
+            home_station_y: y,
+            last_sync_time: 0,
+        }
+    }
+    
+    pub fn new_with_memory(
+        x: usize, 
+        y: usize, 
+        robot_type: RobotType, 
+        id: usize,
+        station_x: usize,
+        station_y: usize,
+        memory: Vec<Vec<TerrainData>>
+    ) -> Self {
         let (max_energy, energy) = match robot_type {
             RobotType::Explorer => (80.0, 80.0),
             RobotType::EnergyCollector => (120.0, 120.0),
@@ -59,10 +107,12 @@ impl Robot {
             scientific_data: 0,
             robot_type,
             mode: RobotMode::Exploring,
-            memory: vec![vec![false; MAP_SIZE]; MAP_SIZE],
+            memory,
             target: None,
-            home_station_x: x,
-            home_station_y: y,
+            id,
+            home_station_x: station_x,
+            home_station_y: station_y,
+            last_sync_time: 0,
         }
     }
     
@@ -86,7 +136,7 @@ impl Robot {
     
     pub fn update(&mut self, map: &mut Map, station: &mut Station) {
         self.energy -= 0.1;
-        self.update_memory();
+        self.update_memory(station);
         
         if self.should_return_to_station() {
             self.mode = RobotMode::ReturnToStation;
@@ -99,6 +149,13 @@ impl Robot {
             station.deposit_resources(self.minerals, self.scientific_data);
             self.minerals = 0;
             self.scientific_data = 0;
+            
+            // Synchronize knowledge
+            if station.current_time > self.last_sync_time {
+                station.share_knowledge(self);
+                self.last_sync_time = station.current_time;
+            }
+            
             self.mode = RobotMode::Exploring;
         }
         
@@ -119,7 +176,6 @@ impl Robot {
                 let tile = map.get_tile(self.x, self.y);
                 if self.can_collect(tile) {
                     self.collect_resource(map);
-                    // Look for more resources after collecting
                     if let Some(resource_pos) = self.find_nearest_resource(map) {
                         self.target = Some(resource_pos);
                     } else {
@@ -144,7 +200,58 @@ impl Robot {
         }
     }
     
-    // ... reste des méthodes identiques aux commits précédents ...
+    fn update_memory(&mut self, station: &Station) {
+        self.memory[self.y][self.x] = TerrainData {
+            explored: true,
+            timestamp: station.current_time,
+            robot_id: self.id,
+            robot_type: self.robot_type,
+        };
+        
+        let vision_range = match self.robot_type {
+            RobotType::Explorer => 3,
+            _ => 2,
+        };
+        
+        for dy in -vision_range..=vision_range {
+            for dx in -vision_range..=vision_range {
+                let nx = self.x as isize + dx;
+                let ny = self.y as isize + dy;
+                
+                if nx >= 0 && nx < MAP_SIZE as isize && ny >= 0 && ny < MAP_SIZE as isize {
+                    let nx = nx as usize;
+                    let ny = ny as usize;
+                    
+                    if !self.memory[ny][nx].explored || 
+                       self.memory[ny][nx].timestamp < station.current_time {
+                        
+                        self.memory[ny][nx] = TerrainData {
+                            explored: true,
+                            timestamp: station.current_time,
+                            robot_id: self.id,
+                            robot_type: self.robot_type,
+                        };
+                    }
+                }
+            }
+        }
+    }
+    
+    pub fn get_exploration_percentage(&self) -> f32 {
+        let mut explored_count = 0;
+        
+        for y in 0..MAP_SIZE {
+            for x in 0..MAP_SIZE {
+                if self.memory[y][x].explored {
+                    explored_count += 1;
+                }
+            }
+        }
+        
+        (explored_count as f32 / (MAP_SIZE * MAP_SIZE) as f32) * 100.0
+    }
+    
+    // ... reste des méthodes identiques ...
     
     fn should_return_to_station(&self) -> bool {
         if self.energy < self.max_energy * 0.3 {
@@ -213,30 +320,10 @@ impl Robot {
         }
     }
     
-    fn update_memory(&mut self) {
-        self.memory[self.y][self.x] = true;
-        
-        let vision_range = match self.robot_type {
-            RobotType::Explorer => 3,
-            _ => 2,
-        };
-        
-        for dy in -vision_range..=vision_range {
-            for dx in -vision_range..=vision_range {
-                let nx = self.x as isize + dx;
-                let ny = self.y as isize + dy;
-                
-                if nx >= 0 && nx < MAP_SIZE as isize && ny >= 0 && ny < MAP_SIZE as isize {
-                    self.memory[ny as usize][nx as usize] = true;
-                }
-            }
-        }
-    }
-    
     fn find_exploration_target(&self) -> Option<(usize, usize)> {
         for y in 0..MAP_SIZE {
             for x in 0..MAP_SIZE {
-                if !self.memory[y][x] {
+                if !self.memory[y][x].explored {
                     return Some((x, y));
                 }
             }
