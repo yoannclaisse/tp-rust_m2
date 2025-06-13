@@ -65,6 +65,9 @@ impl Map {
     }
     
     pub fn get_tile(&self, x: usize, y: usize) -> TileType {
+        if x >= MAP_SIZE || y >= MAP_SIZE {
+            return TileType::Obstacle; // Treat out-of-bounds as obstacles
+        }
         self.tiles[y][x].clone()
     }
     
@@ -73,11 +76,13 @@ impl Map {
     }
     
     pub fn consume_resource(&mut self, x: usize, y: usize) {
-        match self.tiles[y][x] {
-            TileType::Energy | TileType::Mineral | TileType::Scientific => {
-                self.tiles[y][x] = TileType::Empty;
-            },
-            _ => {}
+        if x < MAP_SIZE && y < MAP_SIZE {
+            match self.tiles[y][x] {
+                TileType::Energy | TileType::Mineral | TileType::Scientific => {
+                    self.tiles[y][x] = TileType::Empty;
+                },
+                _ => {}
+            }
         }
     }
     
