@@ -65,8 +65,8 @@ impl Robot {
         }
         
         Self {
-            x: x.clamp(0, MAP_SIZE - 1),
-            y: y.clamp(0, MAP_SIZE - 1),
+            x,
+            y,
             energy,
             max_energy,
             minerals: 0,
@@ -75,9 +75,9 @@ impl Robot {
             mode: RobotMode::Exploring,
             memory,
             target: None,
-            id: 0,
-            home_station_x: x.clamp(0, MAP_SIZE - 1),
-            home_station_y: y.clamp(0, MAP_SIZE - 1),
+            id: 0, // Will be set by station
+            home_station_x: x,
+            home_station_y: y,
             last_sync_time: 0,
         }
     }
@@ -99,8 +99,8 @@ impl Robot {
         };
         
         Self {
-            x: x.clamp(0, MAP_SIZE - 1),
-            y: y.clamp(0, MAP_SIZE - 1),
+            x,
+            y,
             energy,
             max_energy,
             minerals: 0,
@@ -110,8 +110,8 @@ impl Robot {
             memory,
             target: None,
             id,
-            home_station_x: station_x.clamp(0, MAP_SIZE - 1),
-            home_station_y: station_y.clamp(0, MAP_SIZE - 1),
+            home_station_x: station_x,
+            home_station_y: station_y,
             last_sync_time: 0,
         }
     }
@@ -134,16 +134,7 @@ impl Robot {
         }
     }
     
-    // Ensure robot position is always within bounds
-    fn clamp_position(&mut self) {
-        self.x = self.x.clamp(0, MAP_SIZE - 1);
-        self.y = self.y.clamp(0, MAP_SIZE - 1);
-    }
-    
     pub fn update(&mut self, map: &mut Map, station: &mut Station) {
-        // Ensure we're within bounds at start of update
-        self.clamp_position();
-        
         self.energy -= 0.1;
         self.update_memory(station);
         
@@ -207,21 +198,15 @@ impl Robot {
                 }
             }
         }
-        
-        // Final bounds check after all operations
-        self.clamp_position();
     }
     
     fn update_memory(&mut self, station: &Station) {
-        // Ensure current position is valid before updating memory
-        if self.x < MAP_SIZE && self.y < MAP_SIZE {
-            self.memory[self.y][self.x] = TerrainData {
-                explored: true,
-                timestamp: station.current_time,
-                robot_id: self.id,
-                robot_type: self.robot_type,
-            };
-        }
+        self.memory[self.y][self.x] = TerrainData {
+            explored: true,
+            timestamp: station.current_time,
+            robot_id: self.id,
+            robot_type: self.robot_type,
+        };
         
         let vision_range = match self.robot_type {
             RobotType::Explorer => 3,
@@ -265,6 +250,8 @@ impl Robot {
         
         (explored_count as f32 / (MAP_SIZE * MAP_SIZE) as f32) * 100.0
     }
+    
+    // ... reste des méthodes identiques ...
     
     fn should_return_to_station(&self) -> bool {
         if self.energy < self.max_energy * 0.3 {
@@ -348,39 +335,23 @@ impl Robot {
         if let Some(target) = self.target {
             let path = self.find_path(map, target);
             if let Some(&next_pos) = path.front() {
-                // Double-check that the next position is valid and within bounds
-                if next_pos.0 < MAP_SIZE && next_pos.1 < MAP_SIZE && 
-                   map.is_valid_position(next_pos.0, next_pos.1) {
-                    
-                    self.x = next_pos.0;
-                    self.y = next_pos.1;
-                    
-                    let energy_cost = match self.robot_type {
-                        RobotType::Explorer => 0.3,
-                        RobotType::EnergyCollector => 0.4,
-                        RobotType::MineralCollector => 0.5,
-                        RobotType::ScientificCollector => 0.6,
-                    };
-                    
-                    self.energy -= energy_cost;
-                } else {
-                    // If movement is invalid, clear target and look for new one
-                    self.target = None;
-                }
+                self.x = next_pos.0;
+                self.y = next_pos.1;
+                
+                let energy_cost = match self.robot_type {
+                    RobotType::Explorer => 0.3,
+                    RobotType::EnergyCollector => 0.4,
+                    RobotType::MineralCollector => 0.5,
+                    RobotType::ScientificCollector => 0.6,
+                };
+                
+                self.energy -= energy_cost;
             }
         }
-        
-        // Ensure position is still valid after movement
-        self.clamp_position();
     }
     
     fn find_path(&self, map: &Map, target: (usize, usize)) -> VecDeque<(usize, usize)> {
         let start = (self.x, self.y);
-        
-        // Validate target is within bounds
-        if target.0 >= MAP_SIZE || target.1 >= MAP_SIZE {
-            return VecDeque::new();
-        }
         
         if start == target {
             return VecDeque::new();
@@ -406,11 +377,7 @@ impl Robot {
                 
                 while current != start {
                     path.push_front(current);
-                    if let Some(&prev) = came_from.get(&current) {
-                        current = prev;
-                    } else {
-                        break;
-                    }
+                    current = *came_from.get(&current).unwrap();
                 }
                 
                 return path;
@@ -425,7 +392,6 @@ impl Robot {
                     let nx = current_pos.0 as isize + dx;
                     let ny = current_pos.1 as isize + dy;
                     
-                    // Strict bounds checking
                     if nx < 0 || nx >= MAP_SIZE as isize || ny < 0 || ny >= MAP_SIZE as isize {
                         continue;
                     }
