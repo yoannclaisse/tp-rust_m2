@@ -61,7 +61,8 @@ impl Display {
         // Station status
         stdout.execute(MoveTo(0, MAP_SIZE as u16 + 1))?;
         stdout.execute(SetForegroundColor(Color::Yellow))?;
-        println!("Station: {}", station.get_status());
+        println!("Station: {} | Exploration: {:.1}%", 
+                station.get_status(), station.get_exploration_percentage());
         
         // Robot status
         for (i, robot) in robots.iter().enumerate() {
@@ -82,8 +83,9 @@ impl Display {
                 RobotMode::Idle => "Inactif",
             };
             
-            println!("Robot {}: {} | Énergie: {:.1} | Mode: {} | Min: {} | Sci: {}", 
-                    i + 1, robot_type, robot.energy, mode, robot.minerals, robot.scientific_data);
+            println!("Robot {} ({}): {} | Pos: ({},{}) | Énergie: {:.1} | Mode: {} | Min: {} | Sci: {} | Exploré: {:.1}%", 
+                    robot.id, robot.get_display_char(), robot_type, robot.x, robot.y, 
+                    robot.energy, mode, robot.minerals, robot.scientific_data, robot.get_exploration_percentage());
         }
         
         stdout.flush()?;
