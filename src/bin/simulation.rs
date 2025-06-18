@@ -1,7 +1,7 @@
 // Serveur de simulation EREEA
 // Exécute la logique de simulation et diffuse l'état via TCP aux clients connectés
 
-use ereea::types::{MAP_SIZE, RobotType, RobotMode};
+use ereea::types::{RobotType, RobotMode};
 use ereea::map::Map;
 use ereea::robot::Robot;
 use ereea::station::Station;
