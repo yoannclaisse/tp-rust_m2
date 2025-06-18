@@ -5,18 +5,19 @@ use rand::prelude::*;
 use std::collections::{VecDeque, BinaryHeap, HashMap};
 use std::cmp::Ordering;
 
-// Structure pour l'algorithme A* de recherche de chemin
+// Structure de nœud pour l'algorithme A*
 #[derive(Clone, Eq, PartialEq)]
 struct Node {
-    position: (usize, usize),  // Position sur la carte
-    g_cost: usize,             // Coût depuis le départ
-    f_cost: usize,             // Coût total estimé
+    position: (usize, usize),
+    g_cost: usize,  // Coût depuis le départ
+    f_cost: usize,  // Coût total estimé (g_cost + heuristique)
 }
 
-// Implémentation pour la file de priorité (min-heap)
+// Implémentation pour le tri dans la file de priorité
 impl Ord for Node {
     fn cmp(&self, other: &Self) -> Ordering {
-        other.f_cost.cmp(&self.f_cost) // Inversé pour min-heap
+        // On inverse pour avoir une min-heap au lieu d'une max-heap
+        other.f_cost.cmp(&self.f_cost)
     }
 }
 
@@ -26,36 +27,34 @@ impl PartialOrd for Node {
     }
 }
 
-// Structure principale d'un robot
 pub struct Robot {
-    pub x: usize,                           // Position X sur la carte
-    pub y: usize,                           // Position Y sur la carte
-    pub energy: f32,                        // Énergie actuelle
-    pub max_energy: f32,                    // Énergie maximale
-    pub minerals: u32,                      // Minerais transportés
-    pub scientific_data: u32,               // Données scientifiques collectées
-    pub robot_type: RobotType,              // Type de spécialisation
-    pub mode: RobotMode,                    // Mode de comportement actuel
-    pub memory: Vec<Vec<TerrainData>>,      // Mémoire personnelle du robot
-    pub target: Option<(usize, usize)>,     // Destination actuelle
-    pub id: usize,                          // Identifiant unique
-    pub home_station_x: usize,              // Position X de la station d'origine
-    pub home_station_y: usize,              // Position Y de la station d'origine
-    pub last_sync_time: u32,                // Dernière synchronisation avec station
+    pub x: usize,
+    pub y: usize,
+    pub energy: f32,
+    pub max_energy: f32,
+    pub minerals: u32,
+    pub scientific_data: u32,
+    pub robot_type: RobotType,
+    pub mode: RobotMode,
+    pub memory: Vec<Vec<TerrainData>>, // Mémoire du robot avec timestamps
+    pub path_to_station: VecDeque<(usize, usize)>, // Chemin vers la destination
+    pub id: usize,                     // Identifiant unique du robot
+    pub home_station_x: usize,         // Coordonnées X de la station d'origine
+    pub home_station_y: usize,         // Coordonnées Y de la station d'origine
+    pub last_sync_time: u32,           // Dernière synchronisation avec la station
 }
 
 impl Robot {
-    // Constructeur basique d'un robot
     pub fn new(x: usize, y: usize, robot_type: RobotType) -> Self {
-        // Paramètres selon le type de robot
+        // Paramètres différents selon le type de robot
         let (max_energy, energy) = match robot_type {
             RobotType::Explorer => (80.0, 80.0),           // Explorateur: endurance moyenne
-            RobotType::EnergyCollector => (120.0, 120.0),  // Collecteur énergie: grande autonomie
-            RobotType::MineralCollector => (100.0, 100.0), // Collecteur minerais: bonne endurance
-            RobotType::ScientificCollector => (60.0, 60.0), // Collecteur science: faible autonomie
+            RobotType::EnergyCollector => (120.0, 120.0),  // Collecteur d'énergie: grande capacité
+            RobotType::MineralCollector => (100.0, 100.0), // Collecteur de minerais: bonne endurance
+            RobotType::ScientificCollector => (60.0, 60.0), // Collecteur scientifique: faible endurance
         };
         
-        // Initialiser une mémoire vierge
+        // Initialiser une mémoire vide
         let mut memory = Vec::with_capacity(MAP_SIZE);
         for _ in 0..MAP_SIZE {
             let row = vec![
@@ -71,24 +70,24 @@ impl Robot {
         }
         
         Self {
-            x: x.clamp(0, MAP_SIZE - 1),               // S'assurer que la position est valide
-            y: y.clamp(0, MAP_SIZE - 1),
+            x,
+            y,
             energy,
             max_energy,
             minerals: 0,
             scientific_data: 0,
             robot_type,
-            mode: RobotMode::Exploring,
+            mode: RobotMode::Exploring, // Commencer directement en mode exploration
             memory,
-            target: None,
-            id: 0,                                     // Sera défini par la station
-            home_station_x: x.clamp(0, MAP_SIZE - 1),
-            home_station_y: y.clamp(0, MAP_SIZE - 1),
+            path_to_station: VecDeque::new(),
+            id: 0, // Sera défini par la station
+            home_station_x: x,
+            home_station_y: y,
             last_sync_time: 0,
         }
     }
     
-    // Constructeur avec mémoire préchargée (pour robots créés par la station)
+    // Constructeur avec mémoire préchargée (pour la création par la station)
     pub fn new_with_memory(
         x: usize, 
         y: usize, 
@@ -114,8 +113,8 @@ impl Robot {
             scientific_data: 0,
             robot_type,
             mode: RobotMode::Exploring,
-            memory,                                    // Mémoire partagée de la station
-            target: None,
+            memory,
+            path_to_station: VecDeque::new(),
             id,
             home_station_x: station_x,
             home_station_y: station_y,
@@ -123,17 +122,17 @@ impl Robot {
         }
     }
     
-    // Retourne le caractère d'affichage selon le type
+    // Caractère pour affichage selon le type de robot
     pub fn get_display_char(&self) -> &str {
         match self.robot_type {
-            RobotType::Explorer => "E",               // E pour Explorateur
-            RobotType::EnergyCollector => "P",        // P pour Power (énergie)
-            RobotType::MineralCollector => "M",       // M pour Minerais
-            RobotType::ScientificCollector => "S",    // S pour Science
+            RobotType::Explorer => "E",
+            RobotType::EnergyCollector => "P", // Power collector
+            RobotType::MineralCollector => "M",
+            RobotType::ScientificCollector => "S",
         }
     }
     
-    // Retourne la couleur d'affichage selon le type
+    // Couleur selon le type de robot
     pub fn get_display_color(&self) -> u8 {
         match self.robot_type {
             RobotType::Explorer => 9,          // Rouge vif
@@ -143,160 +142,37 @@ impl Robot {
         }
     }
     
-    // S'assure que le robot reste dans les limites de la carte
-    fn clamp_position(&mut self) {
-        self.x = self.x.clamp(0, MAP_SIZE - 1);
-        self.y = self.y.clamp(0, MAP_SIZE - 1);
-    }
-    
-    // Méthode principale de mise à jour du robot (appelée à chaque cycle)
-    pub fn update(&mut self, map: &mut Map, station: &mut Station) {
-        // Vérifier les limites de position
-        self.clamp_position();
-        
-        // Consommation d'énergie de base (métabolisme)
-        self.energy -= 0.1;
-        
-        // Mettre à jour la mémoire du robot
-        self.update_memory(station);
-        
-        // Vérifier si le robot doit retourner à la station
-        if self.should_return_to_station(map) {
-            self.mode = RobotMode::ReturnToStation;
-            self.target = Some((self.home_station_x, self.home_station_y));
-        }
-        
-        // Logique spéciale quand le robot est à la station
-        if self.x == self.home_station_x && self.y == self.home_station_y {
-            // Recharger complètement l'énergie
-            self.energy = self.max_energy;
-            
-            // Déposer toutes les ressources collectées
-            station.deposit_resources(self.minerals, self.scientific_data);
-            self.minerals = 0;
-            self.scientific_data = 0;
-            
-            // Synchroniser les connaissances avec la station
-            if station.current_time > self.last_sync_time {
-                station.share_knowledge(self);
-                self.last_sync_time = station.current_time;
-            }
-            
-            // Déterminer le prochain mode selon le type de robot
-            match self.robot_type {
-                RobotType::Explorer => {
-                    // L'explorateur retourne immédiatement explorer
-                    self.mode = RobotMode::Exploring;
-                },
-                _ => {
-                    // Les collecteurs cherchent des ressources spécifiques
-                    if let Some(resource_pos) = self.find_nearest_resource(map) {
-                        self.target = Some(resource_pos);
-                        self.mode = RobotMode::Collecting;
-                    } else {
-                        // Si aucune ressource trouvée, passer en mode exploration
-                        self.mode = RobotMode::Exploring;
-                    }
-                }
-            }
-        }
-        
-        // Machine à états pour le comportement du robot
-        match self.mode {
-            RobotMode::Exploring => {
-                // Pour les collecteurs, vérifier s'il y a des ressources à proximité
-                if self.robot_type != RobotType::Explorer {
-                    if let Some(resource_pos) = self.find_nearest_resource(map) {
-                        let distance = self.heuristic((self.x, self.y), resource_pos);
-                        if distance <= 5 {  // Distance de détection
-                            self.target = Some(resource_pos);
-                            self.mode = RobotMode::Collecting;
-                            self.clamp_position();
-                            return;
-                        }
-                    }
-                }
-                
-                // Sinon, chercher une zone à explorer
-                self.target = self.find_exploration_target();
-                
-                if let Some(target) = self.target {
-                    self.move_towards_target(map);
-                }
-            },
-            
-            RobotMode::Collecting => {
-                // Vérifier si on est sur une ressource collectible
-                let tile = map.get_tile(self.x, self.y);
-                if self.can_collect(tile) {
-                    self.collect_resource(map);
-                    // Chercher d'autres ressources après collecte
-                    if let Some(resource_pos) = self.find_nearest_resource(map) {
-                        self.target = Some(resource_pos);
-                    } else {
-                        // Plus de ressources disponibles, retourner à la station
-                        self.mode = RobotMode::ReturnToStation;
-                        self.target = Some((self.home_station_x, self.home_station_y));
-                    }
-                } else if let Some(target) = self.target {
-                    // Continuer vers la cible
-                    self.move_towards_target(map);
-                }
-            },
-            
-            RobotMode::ReturnToStation => {
-                if let Some(target) = self.target {
-                    self.move_towards_target(map);
-                } else {
-                    self.mode = RobotMode::Idle;
-                }
-            },
-            
-            RobotMode::Idle => {
-                // Seuls les explorateurs sortent automatiquement du mode idle
-                if self.robot_type == RobotType::Explorer {
-                    self.mode = RobotMode::Exploring;
-                }
-            }
-        }
-        
-        // Vérification finale des limites après toutes les opérations
-        self.clamp_position();
-    }
-    
-    // Met à jour la mémoire du robot avec vision à 360°
-    fn update_memory(&mut self, station: &Station) {
-        // Marquer la position actuelle comme explorée
-        if self.x < MAP_SIZE && self.y < MAP_SIZE {
-            self.memory[self.y][self.x] = TerrainData {
-                explored: true,
-                timestamp: station.current_time,
-                robot_id: self.id,
-                robot_type: self.robot_type,
-            };
-        }
-        
-        // Portée de vision selon le type de robot
-        let vision_range = match self.robot_type {
-            RobotType::Explorer => 3,  // Explorateurs voient plus loin
-            _ => 2,                    // Autres types ont vision standard
+    // Mise à jour de la mémoire (exploration)
+    pub fn update_memory(&mut self, map: &Map, station: &Station) {
+        let _ = map;
+        // Marquer la case actuelle comme explorée avec timestamp
+        self.memory[self.y][self.x] = TerrainData {
+            explored: true,
+            timestamp: station.current_time,
+            robot_id: self.id,
+            robot_type: self.robot_type,
         };
         
-        // Marquer toutes les cases dans la portée de vision
+        // Explorer les cases adjacentes (vision)
+        let vision_range = match self.robot_type {
+            RobotType::Explorer => 3, // L'explorateur voit plus loin
+            _ => 2,                   // Les autres types ont une vision standard
+        };
+        
         for dy in -vision_range..=vision_range {
             for dx in -vision_range..=vision_range {
                 let nx = self.x as isize + dx;
                 let ny = self.y as isize + dy;
                 
-                // Vérifier que la position est valide
                 if nx >= 0 && nx < MAP_SIZE as isize && ny >= 0 && ny < MAP_SIZE as isize {
                     let nx = nx as usize;
                     let ny = ny as usize;
                     
-                    // Mettre à jour seulement si pas encore exploré ou info plus récente
+                    // Si la case n'est pas encore explorée ou si notre info est plus récente
                     if !self.memory[ny][nx].explored || 
                        self.memory[ny][nx].timestamp < station.current_time {
                         
+                        // Mettre à jour avec les connaissances actuelles
                         self.memory[ny][nx] = TerrainData {
                             explored: true,
                             timestamp: station.current_time,
@@ -309,58 +185,282 @@ impl Robot {
         }
     }
     
-    // Calcule le pourcentage d'exploration personnel du robot
-    pub fn get_exploration_percentage(&self) -> f32 {
-        let mut explored_count = 0;
+    // Méthode principale de mise à jour
+    pub fn update(&mut self, map: &mut Map, station: &mut Station) {
+        // Consommer de l'énergie (métabolisme de base)
+        self.energy -= 0.1;
         
-        for y in 0..MAP_SIZE {
-            for x in 0..MAP_SIZE {
-                if self.memory[y][x].explored {
-                    explored_count += 1;
+        // Vérifier si le robot doit retourner à la station
+        if self.should_return_to_station(map) {
+            self.mode = RobotMode::ReturnToStation;
+            self.plan_path_to_station(map);
+        }
+        
+        // Pour les collecteurs, vérifier s'il reste des ressources à collecter
+        if self.robot_type != RobotType::Explorer && self.mode == RobotMode::Exploring {
+            // Si aucune ressource de son type n'est disponible, retourner à la station
+            if self.find_nearest_resource(map).is_none() {
+                // S'il n'est pas déjà à la station
+                if self.x != self.home_station_x || self.y != self.home_station_y {
+                    self.mode = RobotMode::ReturnToStation;
+                    self.plan_path_to_station(map);
                 }
             }
         }
         
-        (explored_count as f32 / (MAP_SIZE * MAP_SIZE) as f32) * 100.0
+        // Si à la station, recharger, synchroniser et changer de mode
+        if self.x == self.home_station_x && self.y == self.home_station_y {
+            // Recharger et décharger
+            self.energy = self.max_energy;
+            station.deposit_resources(self.minerals, self.scientific_data);
+            self.minerals = 0;
+            self.scientific_data = 0;
+            
+            // Synchroniser les connaissances avec la station
+            if station.current_time > self.last_sync_time {
+                station.share_knowledge(self);
+                self.last_sync_time = station.current_time;
+            }
+            
+            // Changer de mode après avoir rechargé
+            match self.robot_type {
+                RobotType::Explorer => {
+                    // L'explorateur retourne explorer
+                    self.mode = RobotMode::Exploring;
+                },
+                _ => {
+                    // Les collecteurs cherchent des ressources
+                    if let Some(resource_pos) = self.find_nearest_resource(map) {
+                        self.path_to_station = self.find_path(map, resource_pos);
+                        self.mode = RobotMode::Collecting;
+                    } else {
+                        // Si pas de ressource trouvée, rester à la station en mode Idle
+                        self.mode = RobotMode::Idle;
+                    }
+                }
+            }
+        }
+        
+        // Logique de déplacement selon le mode
+        match self.mode {
+            RobotMode::Idle => {
+                // Rester sur place, mais normalement on ne devrait pas rester longtemps en idle
+                if self.robot_type == RobotType::Explorer {
+                    self.mode = RobotMode::Exploring;
+                }
+            },
+            RobotMode::Exploring => {
+                // Si c'est un collecteur, vérifier s'il y a des ressources à proximité
+                if self.robot_type != RobotType::Explorer {
+                    if let Some(resource_pos) = self.find_nearest_resource(map) {
+                        let distance = self.heuristic((self.x, self.y), resource_pos);
+                        if distance <= 5 {  // Distance de détection
+                            self.path_to_station = self.find_path(map, resource_pos);
+                            self.mode = RobotMode::Collecting;
+                            return;
+                        }
+                    }
+                }
+                
+                // Sinon, explorer normalement
+                self.explore_move(map);
+            },
+            RobotMode::Collecting => {
+                // Si on est sur la ressource cible, la collecter
+                let tile = map.get_tile(self.x, self.y);
+                let can_collect = match (self.robot_type, tile) {
+                    (RobotType::EnergyCollector, TileType::Energy) => true,
+                    (RobotType::MineralCollector, TileType::Mineral) => true,
+                    (RobotType::ScientificCollector, TileType::Scientific) => true,
+                    _ => false,
+                };
+                
+                if can_collect {
+                    self.collect_resources(map);
+                } else if !self.path_to_station.is_empty() {
+                    // Suivre le chemin vers la ressource
+                    let next = self.path_to_station.pop_front().unwrap();
+                    self.move_to(next.0, next.1);
+                } else {
+                    // Si le chemin est vide mais qu'on n'est pas sur la ressource, chercher une autre ressource
+                    if let Some(resource_pos) = self.find_nearest_resource(map) {
+                        self.path_to_station = self.find_path(map, resource_pos);
+                    } else {
+                        // Si plus de ressources, retourner à la station
+                        self.mode = RobotMode::ReturnToStation;
+                        self.plan_path_to_station(map);
+                    }
+                }
+            },
+            RobotMode::ReturnToStation => {
+                if !self.path_to_station.is_empty() {
+                    // Suivre le chemin vers la station
+                    let next = self.path_to_station.pop_front().unwrap();
+                    self.move_to(next.0, next.1);
+                } else {
+                    // Si le chemin est vide mais qu'on n'est pas à la station, replanifier
+                    if self.x != self.home_station_x || self.y != self.home_station_y {
+                        self.plan_path_to_station(map);
+                        if !self.path_to_station.is_empty() {
+                            let next = self.path_to_station.pop_front().unwrap();
+                            self.move_to(next.0, next.1);
+                        } else {
+                            // Si on ne peut pas générer de chemin, revenir en mode exploration
+                            self.mode = RobotMode::Exploring;
+                        }
+                    } else {
+                        // Si on est à la station, passer en mode idle
+                        self.mode = RobotMode::Idle;
+                    }
+                }
+            }
+        }
+        
+        // Mettre à jour la mémoire
+        self.update_memory(map, station);
     }
     
-    // Détermine si le robot doit retourner à la station
+    // Déplacement d'exploration intelligent
+    fn explore_move(&mut self, map: &Map) {
+        // Chercher les cases non explorées à proximité
+        let mut unexplored_tiles = Vec::new();
+        let vision_range = 5; // Portée de détection des cases non explorées
+        
+        for y in 0..MAP_SIZE {
+            for x in 0..MAP_SIZE {
+                // Si la case n'est pas explorée
+                if !self.memory[y][x].explored {
+                    // Calculer la distance avec la position actuelle
+                    let distance = self.heuristic((self.x, self.y), (x, y));
+                    if distance <= vision_range {
+                        unexplored_tiles.push((x, y, distance));
+                    }
+                }
+            }
+        }
+        
+        // Si des cases non explorées sont trouvées, aller vers la plus proche
+        if !unexplored_tiles.is_empty() {
+            // Trier par distance
+            unexplored_tiles.sort_by_key(|&(_, _, dist)| dist);
+            
+            // Trouver un chemin vers la case non explorée la plus proche
+            let target = (unexplored_tiles[0].0, unexplored_tiles[0].1);
+            let path = self.find_path(map, target);
+            
+            if !path.is_empty() {
+                let next = path[0];
+                self.move_to(next.0, next.1);
+                return;
+            }
+        }
+        
+        // Si pas de cases non explorées à proximité ou si on ne peut pas y aller,
+        // faire un mouvement aléatoire comme avant
+        let mut rng = rand::thread_rng();
+        let mut possible_moves = Vec::new();
+        
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+                
+                let nx = self.x as isize + dx;
+                let ny = self.y as isize + dy;
+                
+                if nx >= 0 && nx < MAP_SIZE as isize && ny >= 0 && ny < MAP_SIZE as isize 
+                   && map.is_valid_position(nx as usize, ny as usize) {
+                    possible_moves.push((nx as usize, ny as usize));
+                }
+            }
+        }
+        
+        if !possible_moves.is_empty() {
+            let (nx, ny) = possible_moves[rng.gen_range(0..possible_moves.len())];
+            self.move_to(nx, ny);
+        }
+    }
+    
+    // Collecte de ressources selon le type de robot
+    fn collect_resources(&mut self, map: &mut Map) {
+        let tile = map.get_tile(self.x, self.y);
+        
+        match (self.robot_type, tile) {
+            (RobotType::EnergyCollector, TileType::Energy) => {
+                if self.energy < self.max_energy {
+                    self.energy += 10.0;
+                    if self.energy > self.max_energy {
+                        self.energy = self.max_energy;
+                    }
+                    map.consume_resource(self.x, self.y);
+                }
+            },
+            (RobotType::MineralCollector, TileType::Mineral) => {
+                self.minerals += 1;
+                map.consume_resource(self.x, self.y);
+            },
+            (RobotType::ScientificCollector, TileType::Scientific) => {
+                self.scientific_data += 1;
+                map.consume_resource(self.x, self.y);
+            },
+            _ => {
+                // Si pas de ressource à collecter, explorer
+                self.explore_move(map);
+            }
+        }
+        
+        // Après avoir collecté, vérifier s'il reste des ressources
+        if let Some(resource_pos) = self.find_nearest_resource(map) {
+            self.path_to_station = self.find_path(map, resource_pos);
+        } else {
+            // Si plus de ressources, retourner à la station
+            self.mode = RobotMode::ReturnToStation;
+            self.plan_path_to_station(map);
+        }
+    }
+    
+    // Vérifier s'il faut retourner à la station
     fn should_return_to_station(&self, map: &Map) -> bool {
-        // Retour obligatoire si énergie critique
+        let _ = map;
+        // Retourner si énergie faible
         if self.energy < self.max_energy * 0.3 {
             return true;
         }
         
-        // Retour si inventaire plein (selon le type de robot)
+        // Retourner si inventaire plein (selon le type)
         match self.robot_type {
-            RobotType::MineralCollector => self.minerals >= 5,      // 5 minerais max
-            RobotType::ScientificCollector => self.scientific_data >= 3, // 3 données max
+            RobotType::MineralCollector => self.minerals >= 5,
+            RobotType::ScientificCollector => self.scientific_data >= 3,
             _ => false
         }
     }
     
-    // Pour les collecteurs, retour automatique si plus de ressources
-    fn should_return_no_resources(&self, map: &Map) -> bool {
-        if self.robot_type != RobotType::Explorer {
-            self.find_nearest_resource(map).is_none()
-        } else {
-            false
-        }
+    // Planifier un chemin vers la station
+    fn plan_path_to_station(&mut self, map: &Map) {
+        let target = (self.home_station_x, self.home_station_y);
+        self.path_to_station = self.find_path(map, target);
     }
     
-    // Trouve la ressource la plus proche selon la spécialisation du robot
+    // Trouver la ressource la plus proche selon le type du robot
     fn find_nearest_resource(&self, map: &Map) -> Option<(usize, usize)> {
         let target_resource = match self.robot_type {
-            RobotType::Explorer => return None,  // Les explorateurs ne cherchent pas de ressources
-            RobotType::EnergyCollector => TileType::Energy,
-            RobotType::MineralCollector => TileType::Mineral,
-            RobotType::ScientificCollector => TileType::Scientific,
+            RobotType::Explorer => None,  // L'explorateur se concentre sur l'exploration
+            RobotType::EnergyCollector => Some(TileType::Energy),
+            RobotType::MineralCollector => Some(TileType::Mineral),
+            RobotType::ScientificCollector => Some(TileType::Scientific),
         };
         
+        // Si pas de ressource cible, retourner None
+        let target_resource = match target_resource {
+            Some(res) => res,
+            None => return None,
+        };
+        
+        // Chercher la ressource la plus proche
         let mut nearest = None;
         let mut min_distance = usize::MAX;
         
-        // Parcourir toute la carte pour trouver la ressource la plus proche
         for y in 0..MAP_SIZE {
             for x in 0..MAP_SIZE {
                 if map.get_tile(x, y) == target_resource {
@@ -376,110 +476,20 @@ impl Robot {
         nearest
     }
     
-    // Vérifie si le robot peut collecter une ressource donnée
-    fn can_collect(&self, tile: TileType) -> bool {
-        match (self.robot_type, tile) {
-            (RobotType::EnergyCollector, TileType::Energy) => true,
-            (RobotType::MineralCollector, TileType::Mineral) => true,
-            (RobotType::ScientificCollector, TileType::Scientific) => true,
-            _ => false,
-        }
-    }
-    
-    // Collecte une ressource sur la case actuelle
-    fn collect_resource(&mut self, map: &mut Map) {
-        let tile = map.get_tile(self.x, self.y);
-        
-        match (self.robot_type, tile) {
-            (RobotType::EnergyCollector, TileType::Energy) => {
-                // Recharge immédiate d'énergie
-                self.energy = (self.energy + 20.0).min(self.max_energy);
-                map.consume_resource(self.x, self.y);
-            },
-            (RobotType::MineralCollector, TileType::Mineral) => {
-                // Ajouter minerai à l'inventaire
-                self.minerals += 1;
-                map.consume_resource(self.x, self.y);
-            },
-            (RobotType::ScientificCollector, TileType::Scientific) => {
-                // Ajouter données scientifiques à l'inventaire
-                self.scientific_data += 1;
-                map.consume_resource(self.x, self.y);
-            },
-            _ => {}
-        }
-    }
-    
-    // Trouve une zone non explorée à cibler
-    fn find_exploration_target(&self) -> Option<(usize, usize)> {
-        // Recherche de cases non explorées, en commençant par les plus proches
-        for distance in 1..MAP_SIZE {
-            for y in 0..MAP_SIZE {
-                for x in 0..MAP_SIZE {
-                    if !self.memory[y][x].explored {
-                        let current_distance = self.heuristic((self.x, self.y), (x, y));
-                        if current_distance <= distance {
-                            return Some((x, y));
-                        }
-                    }
-                }
-            }
-        }
-        None // Toute la carte a été explorée
-    }
-    
-    // Déplace le robot vers sa cible en utilisant le pathfinding A*
-    fn move_towards_target(&mut self, map: &Map) {
-        if let Some(target) = self.target {
-            let path = self.find_path(map, target);
-            if let Some(&next_pos) = path.front() {
-                // Vérifier que la prochaine position est valide et dans les limites
-                if next_pos.0 < MAP_SIZE && next_pos.1 < MAP_SIZE && 
-                   map.is_valid_position(next_pos.0, next_pos.1) {
-                    
-                    self.x = next_pos.0;
-                    self.y = next_pos.1;
-                    
-                    // Coût énergétique du déplacement selon le type de robot
-                    let energy_cost = match self.robot_type {
-                        RobotType::Explorer => 0.3,              // Explorateurs plus efficaces
-                        RobotType::EnergyCollector => 0.4,       // Collecteurs énergie moyens
-                        RobotType::MineralCollector => 0.5,      // Collecteurs minerais lourds
-                        RobotType::ScientificCollector => 0.6,   // Collecteurs science fragiles
-                    };
-                    
-                    self.energy -= energy_cost;
-                } else {
-                    // Si le mouvement est invalide, abandonner la cible
-                    self.target = None;
-                }
-            }
-        }
-        
-        // S'assurer que la position finale est valide
-        self.clamp_position();
-    }
-    
-    // Algorithme A* pour trouver le chemin optimal vers une destination
+    // Algorithme A* pour trouver le chemin optimal
     fn find_path(&self, map: &Map, target: (usize, usize)) -> VecDeque<(usize, usize)> {
         let start = (self.x, self.y);
-        
-        // Valider que la cible est dans les limites
-        if target.0 >= MAP_SIZE || target.1 >= MAP_SIZE {
-            return VecDeque::new();
-        }
         
         // Si déjà à destination
         if start == target {
             return VecDeque::new();
         }
         
-        // Structures pour l'algorithme A*
-        let mut open_set = BinaryHeap::new();                                    // File de priorité
-        let mut came_from: HashMap<(usize, usize), (usize, usize)> = HashMap::new(); // Chemin parcouru
-        let mut g_score: HashMap<(usize, usize), usize> = HashMap::new();       // Coût réel depuis le départ
+        let mut open_set = BinaryHeap::new();
+        let mut came_from: HashMap<(usize, usize), (usize, usize)> = HashMap::new();
+        let mut g_score: HashMap<(usize, usize), usize> = HashMap::new();
         
-        // Initialiser avec la position de départ
+        // Initialiser les valeurs de départ
         g_score.insert(start, 0);
         open_set.push(Node {
             position: start,
@@ -487,29 +497,24 @@ impl Robot {
             f_cost: self.heuristic(start, target),
         });
         
-        // Boucle principale de A*
         while let Some(current) = open_set.pop() {
             let current_pos = current.position;
             
-            // Si on a atteint la destination
+            // Si on est arrivé à destination
             if current_pos == target {
-                // Reconstruire le chemin en remontant
+                // Reconstruire le chemin
                 let mut path = VecDeque::new();
                 let mut current = target;
                 
                 while current != start {
                     path.push_front(current);
-                    if let Some(&prev) = came_from.get(&current) {
-                        current = prev;
-                    } else {
-                        break; // Sécurité contre les boucles infinies
-                    }
+                    current = *came_from.get(&current).unwrap();
                 }
                 
                 return path;
             }
             
-            // Explorer tous les voisins (8 directions)
+            // Examiner tous les voisins
             for dy in -1..=1 {
                 for dx in -1..=1 {
                     if dx == 0 && dy == 0 {
@@ -519,14 +524,14 @@ impl Robot {
                     let nx = current_pos.0 as isize + dx;
                     let ny = current_pos.1 as isize + dy;
                     
-                    // Vérification stricte des limites
+                    // Vérifier si la position est valide
                     if nx < 0 || nx >= MAP_SIZE as isize || ny < 0 || ny >= MAP_SIZE as isize {
                         continue;
                     }
                     
                     let neighbor = (nx as usize, ny as usize);
                     
-                    // Vérifier que la case est accessible
+                    // Vérifier si c'est un obstacle
                     if !map.is_valid_position(neighbor.0, neighbor.1) {
                         continue;
                     }
@@ -534,7 +539,7 @@ impl Robot {
                     // Calculer le nouveau coût
                     let tentative_g_score = g_score[&current_pos] + 1;
                     
-                    // Si on a trouvé un meilleur chemin vers ce voisin
+                    // Si on a trouvé un meilleur chemin
                     if !g_score.contains_key(&neighbor) || tentative_g_score < g_score[&neighbor] {
                         came_from.insert(neighbor, current_pos);
                         g_score.insert(neighbor, tentative_g_score);
@@ -550,13 +555,51 @@ impl Robot {
             }
         }
         
-        VecDeque::new() // Aucun chemin trouvé
+        // Si on ne trouve pas de chemin, retourner un chemin vide
+        VecDeque::new()
     }
     
-    // Heuristique pour A* : distance de Manhattan
+    // Heuristique pour A* (distance de Manhattan)
     fn heuristic(&self, a: (usize, usize), b: (usize, usize)) -> usize {
         let dx = (a.0 as isize - b.0 as isize).abs() as usize;
         let dy = (a.1 as isize - b.1 as isize).abs() as usize;
-        dx + dy // Distance de Manhattan
+        dx + dy
+    }
+    
+    // Déplacement vers une position
+    fn move_to(&mut self, x: usize, y: usize) {
+        // Calculer la distance
+        let dx = (x as isize - self.x as isize).abs();
+        let dy = (y as isize - self.y as isize).abs();
+        let distance = dx.max(dy) as f32;
+        
+        // Consommer de l'énergie selon la distance et le type de robot
+        let energy_cost = match self.robot_type {
+            RobotType::Explorer => 0.3 * distance,
+            RobotType::EnergyCollector => 0.4 * distance,
+            RobotType::MineralCollector => 0.5 * distance,
+            RobotType::ScientificCollector => 0.6 * distance,
+        };
+        
+        self.energy -= energy_cost;
+        
+        // Mettre à jour la position
+        self.x = x;
+        self.y = y;
+    }
+    
+    // Calculer le pourcentage de la carte exploré par ce robot
+    pub fn get_exploration_percentage(&self) -> f32 {
+        let mut explored_count = 0;
+        
+        for y in 0..MAP_SIZE {
+            for x in 0..MAP_SIZE {
+                if self.memory[y][x].explored {
+                    explored_count += 1;
+                }
+            }
+        }
+        
+        (explored_count as f32 / (MAP_SIZE * MAP_SIZE) as f32) * 100.0
     }
 }
