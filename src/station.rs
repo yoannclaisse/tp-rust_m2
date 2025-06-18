@@ -186,8 +186,8 @@ impl Station {
     // Génère un rapport sur l'état actuel de la station
     pub fn get_status(&self) -> String {
         let status = match (self.energy_reserves, self.collected_minerals) {
-            (e, m) if e < 30 => "Faible en énergie",
-            (e, m) if m < 10 => "Faible en minerais", 
+            (e, _m) if e < 30 => "Faible en énergie",
+            (_e, m) if m < 10 => "Faible en minerais", 
             (e, m) if e >= 200 && m >= 50 => "Ressources abondantes",
             _ => "Ressources adéquates",
         };

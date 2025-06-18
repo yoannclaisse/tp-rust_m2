@@ -171,7 +171,7 @@ fn render_earth_interface(state: &SimulationState) -> Result<(), Box<dyn std::er
     stdout.execute(SetForegroundColor(Color::Cyan))?;
     println!("\n== STATUT DES ROBOTS ==");
     
-    for (i, robot) in state.robots_data.iter().enumerate() {
+    for (_i, robot) in state.robots_data.iter().enumerate() {
         let robot_color = match robot.robot_type {
             RobotType::Explorer => Color::AnsiValue(9),
             RobotType::EnergyCollector => Color::AnsiValue(10),
