@@ -42,6 +42,7 @@ pub struct Robot {
     pub home_station_x: usize,         // Coordonnées X de la station d'origine
     pub home_station_y: usize,         // Coordonnées Y de la station d'origine
     pub last_sync_time: u32,           // Dernière synchronisation avec la station
+    pub exploration_complete_announced: bool, // Flag pour éviter de répéter le message
 }
 
 impl Robot {
@@ -84,6 +85,7 @@ impl Robot {
             home_station_x: x,
             home_station_y: y,
             last_sync_time: 0,
+            exploration_complete_announced: false,
         }
     }
     
@@ -119,6 +121,7 @@ impl Robot {
             home_station_x: station_x,
             home_station_y: station_y,
             last_sync_time: 0,
+            exploration_complete_announced: false,
         }
     }
     
@@ -142,7 +145,7 @@ impl Robot {
         }
     }
     
-    // Mise à jour de la mémoire (exploration)
+    // Mise à jour de la mémoire (exploration) - VERSION AMÉLIORÉE
     pub fn update_memory(&mut self, map: &Map, station: &Station) {
         let _ = map;
         // Marquer la case actuelle comme explorée avec timestamp
@@ -153,10 +156,10 @@ impl Robot {
             robot_type: self.robot_type,
         };
         
-        // Explorer les cases adjacentes (vision)
+        // L'explorateur a une vision encore plus étendue pour détecter les cases "?"
         let vision_range = match self.robot_type {
-            RobotType::Explorer => 3, // L'explorateur voit plus loin
-            _ => 2,                   // Les autres types ont une vision standard
+            RobotType::Explorer => 4, // Vision étendue pour l'explorateur
+            _ => 2,                   // Vision standard pour les autres
         };
         
         for dy in -vision_range..=vision_range {
@@ -172,7 +175,6 @@ impl Robot {
                     if !self.memory[ny][nx].explored || 
                        self.memory[ny][nx].timestamp < station.current_time {
                         
-                        // Mettre à jour avec les connaissances actuelles
                         self.memory[ny][nx] = TerrainData {
                             explored: true,
                             timestamp: station.current_time,
@@ -190,6 +192,15 @@ impl Robot {
         // Consommer de l'énergie (métabolisme de base)
         self.energy -= 0.1;
         
+        // Vérifier si l'exploration est terminée (pour les explorateurs uniquement)
+        if self.robot_type == RobotType::Explorer {
+            if self.is_exploration_complete() && !self.exploration_complete_announced {
+                println!("🌍 EXPLORATION DE L'EXOPLANÈTE TERMINÉE ! 🌍");
+                println!("Robot explorateur #{} a cartographié 100% de la planète.", self.id);
+                self.exploration_complete_announced = true;
+            }
+        }
+        
         // Vérifier si le robot doit retourner à la station
         if self.should_return_to_station(map) {
             self.mode = RobotMode::ReturnToStation;
@@ -204,6 +215,10 @@ impl Robot {
                 if self.x != self.home_station_x || self.y != self.home_station_y {
                     self.mode = RobotMode::ReturnToStation;
                     self.plan_path_to_station(map);
+                } else {
+                    // Si déjà à la station et plus de ressources, passer en mode Idle
+                    self.mode = RobotMode::Idle;
+                    println!("🏁 Robot collecteur #{} : Plus de ressources à collecter, passage en mode Idle", self.id);
                 }
             }
         }
@@ -225,8 +240,16 @@ impl Robot {
             // Changer de mode après avoir rechargé
             match self.robot_type {
                 RobotType::Explorer => {
-                    // L'explorateur retourne explorer
-                    self.mode = RobotMode::Exploring;
+                    // Si l'exploration est terminée, rester à la station en mode Idle
+                    if self.is_exploration_complete() {
+                        self.mode = RobotMode::Idle;
+                        if !self.exploration_complete_announced {
+                            println!("🏠 Robot explorateur #{} : Mission terminée, retour définitif à la base.", self.id);
+                        }
+                    } else {
+                        // Sinon, retourner explorer
+                        self.mode = RobotMode::Exploring;
+                    }
                 },
                 _ => {
                     // Les collecteurs cherchent des ressources
@@ -236,6 +259,7 @@ impl Robot {
                     } else {
                         // Si pas de ressource trouvée, rester à la station en mode Idle
                         self.mode = RobotMode::Idle;
+                        println!("🏁 Robot collecteur #{} : Aucune ressource trouvée, reste en mode Idle", self.id);
                     }
                 }
             }
@@ -244,12 +268,26 @@ impl Robot {
         // Logique de déplacement selon le mode
         match self.mode {
             RobotMode::Idle => {
-                // Rester sur place, mais normalement on ne devrait pas rester longtemps en idle
+                // Pour les explorateurs : si l'exploration est terminée, rester à la station
+                if self.robot_type == RobotType::Explorer && self.is_exploration_complete() {
+                    // Ne rien faire, rester à la station
+                    return;
+                }
+                
+                // Pour les autres ou si exploration pas terminée, retourner en mode exploration
                 if self.robot_type == RobotType::Explorer {
                     self.mode = RobotMode::Exploring;
                 }
             },
             RobotMode::Exploring => {
+                // Pour les explorateurs : vérifier si l'exploration est terminée
+                if self.robot_type == RobotType::Explorer && self.is_exploration_complete() {
+                    // Si l'exploration est terminée, retourner à la station et y rester
+                    self.mode = RobotMode::ReturnToStation;
+                    self.plan_path_to_station(map);
+                    return;
+                }
+                
                 // Si c'est un collecteur, vérifier s'il y a des ressources à proximité
                 if self.robot_type != RobotType::Explorer {
                     if let Some(resource_pos) = self.find_nearest_resource(map) {
@@ -320,17 +358,120 @@ impl Robot {
         self.update_memory(map, station);
     }
     
-    // Déplacement d'exploration intelligent
+    // Déplacement d'exploration intelligent - VERSION AMÉLIORÉE
     fn explore_move(&mut self, map: &Map) {
-        // Chercher les cases non explorées à proximité
+        // Pour l'explorateur, utiliser une stratégie plus agressive de recherche de cases non explorées
+        if self.robot_type == RobotType::Explorer {
+            self.explorer_specific_move(map);
+        } else {
+            // Logique normale pour les autres types de robots
+            self.standard_explore_move(map);
+        }
+    }
+    
+    // Nouvelle fonction spécifique pour l'explorateur
+    fn explorer_specific_move(&mut self, map: &Map) {
+        // Chercher les cases non explorées sur TOUTE la carte (pas juste à proximité)
         let mut unexplored_tiles = Vec::new();
-        let vision_range = 5; // Portée de détection des cases non explorées
         
         for y in 0..MAP_SIZE {
             for x in 0..MAP_SIZE {
-                // Si la case n'est pas explorée
+                // Si la case n'est pas explorée (case "?")
                 if !self.memory[y][x].explored {
-                    // Calculer la distance avec la position actuelle
+                    let distance = self.heuristic((self.x, self.y), (x, y));
+                    unexplored_tiles.push((x, y, distance));
+                }
+            }
+        }
+        
+        // Si des cases non explorées sont trouvées
+        if !unexplored_tiles.is_empty() {
+            // Trier par distance pour aller vers la plus proche
+            unexplored_tiles.sort_by_key(|&(_, _, dist)| dist);
+            
+            // Prendre les 3 plus proches et choisir aléatoirement parmi elles
+            // (pour éviter que tous les explorateurs aillent au même endroit)
+            let candidates = unexplored_tiles.iter().take(3).collect::<Vec<_>>();
+            let mut rng = rand::thread_rng();
+            let target_idx = rng.gen_range(0..candidates.len());
+            let target = (candidates[target_idx].0, candidates[target_idx].1);
+            
+            // Utiliser A* pour trouver le chemin optimal vers la case "?"
+            let path = self.find_path(map, target);
+            
+            if !path.is_empty() {
+                let next = path[0];
+                self.move_to(next.0, next.1);
+                return;
+            }
+        }
+        
+        // Si aucune case non explorée ou impossible d'y aller, mouvement aléatoire intelligent
+        self.intelligent_random_move(map);
+    }
+    
+    // Mouvement aléatoire plus intelligent pour l'explorateur
+    fn intelligent_random_move(&mut self, map: &Map) {
+        let mut possible_moves = Vec::new();
+        
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+                
+                let nx = self.x as isize + dx;
+                let ny = self.y as isize + dy;
+                
+                if nx >= 0 && nx < MAP_SIZE as isize && ny >= 0 && ny < MAP_SIZE as isize 
+                   && map.is_valid_position(nx as usize, ny as usize) {
+                    
+                    let new_pos = (nx as usize, ny as usize);
+                    
+                    // Priorité : cases non visitées récemment ou jamais visitées
+                    let priority = if !self.memory[new_pos.1][new_pos.0].explored {
+                        100 // Très haute priorité pour les cases "?"
+                    } else {
+                        // Priorité inversement proportionnelle au timestamp (cases anciennes = priorité plus haute)
+                        let age = self.last_sync_time.saturating_sub(self.memory[new_pos.1][new_pos.0].timestamp);
+                        age.min(50) // Limiter la priorité
+                    };
+                    
+                    possible_moves.push((new_pos.0, new_pos.1, priority));
+                }
+            }
+        }
+        
+        if !possible_moves.is_empty() {
+            // Choisir une case avec probabilité proportionnelle à la priorité
+            possible_moves.sort_by_key(|&(_, _, priority)| std::cmp::Reverse(priority));
+            
+            // Prendre une des 3 meilleures options avec une probabilité décroissante
+            let mut rng = rand::thread_rng();
+            let choice = if rng.gen_bool(0.6) && !possible_moves.is_empty() {
+                0 // 60% de chance de prendre la meilleure option
+            } else if rng.gen_bool(0.3) && possible_moves.len() > 1 {
+                1 // 30% de chance de prendre la deuxième
+            } else if possible_moves.len() > 2 {
+                2 // 10% de chance de prendre la troisième
+            } else {
+                rng.gen_range(0..possible_moves.len())
+            };
+            
+            let (nx, ny, _) = possible_moves[choice];
+            self.move_to(nx, ny);
+        }
+    }
+    
+    // Fonction explore_move originale renommée pour les autres robots
+    fn standard_explore_move(&mut self, map: &Map) {
+        // Logique originale mais avec une portée réduite pour les non-explorateurs
+        let mut unexplored_tiles = Vec::new();
+        let vision_range = 3; // Portée réduite pour les collecteurs
+        
+        for y in 0..MAP_SIZE {
+            for x in 0..MAP_SIZE {
+                if !self.memory[y][x].explored {
                     let distance = self.heuristic((self.x, self.y), (x, y));
                     if distance <= vision_range {
                         unexplored_tiles.push((x, y, distance));
@@ -339,12 +480,8 @@ impl Robot {
             }
         }
         
-        // Si des cases non explorées sont trouvées, aller vers la plus proche
         if !unexplored_tiles.is_empty() {
-            // Trier par distance
             unexplored_tiles.sort_by_key(|&(_, _, dist)| dist);
-            
-            // Trouver un chemin vers la case non explorée la plus proche
             let target = (unexplored_tiles[0].0, unexplored_tiles[0].1);
             let path = self.find_path(map, target);
             
@@ -355,8 +492,7 @@ impl Robot {
             }
         }
         
-        // Si pas de cases non explorées à proximité ou si on ne peut pas y aller,
-        // faire un mouvement aléatoire comme avant
+        // Mouvement aléatoire simple pour les collecteurs
         let mut rng = rand::thread_rng();
         let mut possible_moves = Vec::new();
         
@@ -423,6 +559,14 @@ impl Robot {
     // Vérifier s'il faut retourner à la station
     fn should_return_to_station(&self, map: &Map) -> bool {
         let _ = map;
+        
+        // Pour les explorateurs : retourner si exploration terminée OU énergie faible
+        if self.robot_type == RobotType::Explorer {
+            if self.is_exploration_complete() {
+                return true;
+            }
+        }
+        
         // Retourner si énergie faible
         if self.energy < self.max_energy * 0.3 {
             return true;
@@ -601,5 +745,17 @@ impl Robot {
         }
         
         (explored_count as f32 / (MAP_SIZE * MAP_SIZE) as f32) * 100.0
+    }
+    
+    // Vérifier si l'exploration est terminée (100%)
+    fn is_exploration_complete(&self) -> bool {
+        for y in 0..MAP_SIZE {
+            for x in 0..MAP_SIZE {
+                if !self.memory[y][x].explored {
+                    return false; // Il reste des cases non explorées
+                }
+            }
+        }
+        true // Toutes les cases sont explorées
     }
 }

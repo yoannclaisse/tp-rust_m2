@@ -10,17 +10,14 @@ use map::Map;
 use robot::Robot;
 use display::Display;
 use station::Station;
-use types::RobotType;
+use types::{RobotType, TileType};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Configuration du terminal pour affichage couleur
     enable_raw_mode()?;
     
-    // Initialisation des composants principaux
-    let mut map = Map::new();      // Génération de la carte aléatoire
-    let mut station = Station::new(); // Création de la station
+    let mut map = Map::new();
+    let mut station = Station::new();
     
-    // Création des robots initiaux (équipe de départ)
     let mut robots = vec![
         Robot::new_with_memory(
             map.station_x, map.station_y, 
@@ -48,56 +45,76 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     ];
     
-    // Configurer l'ID du prochain robot
     station.next_robot_id = 5;
-    
-    // Variables pour la logique de création de robots
     let mut iteration = 0;
     let mut last_robot_creation = 0;
     
-    // Boucle principale de simulation
-    for _cycle in 0..1000 {  // Limite pour éviter boucle infinie
-        // Affichage de l'état actuel
+    loop {
+        // Affichage
         Display::render(&map, &station, &robots)?;
-        
-        // Incrémenter l'horloge globale
         station.tick();
         
-        // Mettre à jour tous les robots
-        for robot in robots.iter_mut() {
-            robot.update(&mut map, &mut station);
+        // VÉRIFICATION SIMPLE TOUTES LES 10 ITÉRATIONS
+        if iteration % 10 == 0 {
+            let exploration = station.get_exploration_percentage();
             
-            // Gestion d'urgence : robot sans énergie
-            if robot.energy <= 0.0 {
-                // Téléportation d'urgence à la station
-                robot.x = robot.home_station_x;
-                robot.y = robot.home_station_y;
-                robot.energy = robot.max_energy / 2.0; // Recharge partielle
-                robot.mode = types::RobotMode::Idle;
-                println!("URGENCE: Robot {} téléporté à la station!", robot.id);
+            // Compter ressources restantes
+            let mut resources = 0;
+            for y in 0..20 {
+                for x in 0..20 {
+                    match map.get_tile(x, y) {
+                        TileType::Energy | TileType::Mineral | TileType::Scientific => resources += 1,
+                        _ => {}
+                    }
+                }
+            }
+            
+            // SI EXPLORATION = 100% ET AUCUNE RESSOURCE -> MISSION TERMINÉE
+            if exploration >= 100.0 && resources == 0 {
+                println!("\n🎉🎉🎉 MISSION TERMINÉE ! 🎉🎉🎉");
+                println!("🌍 Exploration: 100%");
+                println!("💎 Toutes les ressources collectées !");
+                println!("🚀 Félicitations !");
+                
+                // Afficher le message par-dessus la carte
+                Display::render_mission_complete(&map, &station, &robots)?;
+                
+                println!("\nFermeture dans 5 secondes...");
+                thread::sleep(Duration::from_secs(5));
+                break;
             }
         }
         
-        // Logique de création de nouveaux robots (tous les 50 cycles)
+        // Mise à jour robots
+        for robot in robots.iter_mut() {
+            robot.update(&mut map, &mut station);
+            
+            if robot.energy <= 0.0 {
+                robot.x = robot.home_station_x;
+                robot.y = robot.home_station_y;
+                robot.energy = robot.max_energy / 2.0;
+                robot.mode = types::RobotMode::Idle;
+            }
+        }
+        
+        // Création robots
         if iteration - last_robot_creation >= 50 {
             if let Some(new_robot) = station.try_create_robot(&map) {
                 robots.push(new_robot);
                 last_robot_creation = iteration;
-                println!("Nouveau robot créé ! Total: {} robots", robots.len());
             }
         }
         
-        // Pause pour permettre l'observation
         thread::sleep(Duration::from_millis(300));
         iteration += 1;
+        
+        if iteration > 3000 {
+            println!("Arrêt de sécurité - mission non terminée");
+            break;
+        }
     }
     
-    // Restauration du terminal
     disable_raw_mode()?;
-    
-    println!("Simulation terminée après {} cycles", iteration);
-    println!("Robots finaux: {}", robots.len());
-    println!("Exploration: {:.1}%", station.get_exploration_percentage());
-    
+    println!("Simulation terminée !");
     Ok(())
 }

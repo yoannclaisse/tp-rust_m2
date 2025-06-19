@@ -148,4 +148,67 @@ impl Display {
         stdout.flush()?;
         Ok(())
     }
+
+    pub fn render_mission_complete(map: &Map, station: &Station, robots: &Vec<Robot>) -> Result<()> {
+        // D'abord afficher la carte normale
+        Self::render(map, station, robots)?;
+        
+        let mut stdout = stdout();
+        
+        // Calculer la position centrale pour le message
+        let center_x = MAP_SIZE as u16;
+        let center_y = (MAP_SIZE / 2) as u16;
+        
+        // Créer un cadre pour le message
+        let message_lines = vec![
+            "╔════════════════════════════════════╗",
+            "║                                    ║",
+            "║        🎉 MISSION COMPLETE! 🎉     ║",
+            "║                                    ║",
+            "║     Exoplanète entièrement         ║",
+            "║       explorée et exploitée!       ║",
+            "║                                    ║",
+            "║   Toutes les ressources récoltées  ║",
+            "║     Tous les robots à la base      ║",
+            "║                                    ║",
+            "║        Félicitations! 🚀           ║",
+            "║                                    ║",
+            "╚════════════════════════════════════╝",
+        ];
+        
+        // Afficher le message au centre de l'écran
+        for (i, line) in message_lines.iter().enumerate() {
+            stdout.execute(MoveTo(center_x, center_y + i as u16 - 6))?;
+            stdout.execute(SetForegroundColor(Color::Yellow))?;
+            print!("{}", line);
+        }
+        
+        // Afficher les statistiques finales
+        stdout.execute(MoveTo(center_x, center_y + 8))?;
+        stdout.execute(SetForegroundColor(Color::Green))?;
+        println!("📊 STATISTIQUES FINALES:");
+        
+        stdout.execute(MoveTo(center_x, center_y + 9))?;
+        stdout.execute(SetForegroundColor(Color::White))?;
+        println!("• Carte explorée: 100%");
+        
+        stdout.execute(MoveTo(center_x, center_y + 10))?;
+        println!("• Minerais collectés: {}", station.collected_minerals);
+        
+        stdout.execute(MoveTo(center_x, center_y + 11))?;
+        println!("• Données scientifiques: {}", station.collected_scientific_data);
+        
+        stdout.execute(MoveTo(center_x, center_y + 12))?;
+        println!("• Robots déployés: {}", robots.len());
+        
+        stdout.execute(MoveTo(center_x, center_y + 13))?;
+        println!("• Conflits résolus: {}", station.conflict_count);
+        
+        stdout.execute(MoveTo(center_x, center_y + 15))?;
+        stdout.execute(SetForegroundColor(Color::Red))?;
+        println!("Appuyez sur Ctrl+C pour quitter...");
+        
+        stdout.flush()?;
+        Ok(())
+    }
 }

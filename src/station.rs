@@ -135,9 +135,10 @@ impl Station {
     
     // Système de partage de connaissances façon "git"
     pub fn share_knowledge(&mut self, robot: &mut Robot) {
-        // Ne synchroniser que si le robot est à la station
+        // Ne synchroniser que si le robot est à la station ET si ce n'est pas déjà fait récemment
         if robot.x == robot.home_station_x && robot.y == robot.home_station_y {
             let mut conflicts = 0;
+            let mut changes_made = false;
             
             // Le robot partage ses connaissances avec la station
             for y in 0..MAP_SIZE {
@@ -148,10 +149,12 @@ impl Station {
                             if robot.memory[y][x].timestamp > self.global_memory[y][x].timestamp {
                                 self.global_memory[y][x] = robot.memory[y][x].clone();
                                 conflicts += 1;
+                                changes_made = true;
                             }
                         } else {
                             // Pas de conflit, ajouter les connaissances du robot
                             self.global_memory[y][x] = robot.memory[y][x].clone();
+                            changes_made = true;
                         }
                     }
                 }
@@ -166,12 +169,14 @@ impl Station {
                 }
             }
             
-            // Mettre à jour les statistiques de conflits
-            self.conflict_count += conflicts;
-            
-            if conflicts > 0 {
-                println!("Robot {} a synchronisé ses connaissances. Conflits résolus: {}", 
-                         robot.id, conflicts);
+            // Mettre à jour les statistiques de conflits seulement si des changements ont été faits
+            if changes_made {
+                self.conflict_count += conflicts;
+                
+                if conflicts > 0 {
+                    println!("Robot {} a synchronisé ses connaissances. Conflits résolus: {}", 
+                             robot.id, conflicts);
+                }
             }
         }
     }
@@ -212,5 +217,59 @@ impl Station {
         }
         
         (explored_count as f32 / (MAP_SIZE * MAP_SIZE) as f32) * 100.0
+    }
+    
+    // NOUVELLES FONCTIONS POUR LA MISSION COMPLÈTE
+    
+    // Vérifier si toutes les missions sont terminées
+    pub fn is_all_missions_complete(&self, map: &Map, robots: &Vec<Robot>) -> bool {
+        // 1. Vérifier que la carte est explorée à 100%
+        if self.get_exploration_percentage() < 100.0 {
+            return false;
+        }
+        
+        // 2. Vérifier qu'il n'y a plus de ressources sur la carte
+        if !self.are_all_resources_collected(map) {
+            return false;
+        }
+        
+        // 3. Vérifier que tous les robots sont revenus à la base ou en mode approprié
+        for robot in robots {
+            match robot.robot_type {
+                RobotType::Explorer => {
+                    // L'explorateur doit être en mode Idle à la station
+                    if robot.mode != crate::types::RobotMode::Idle || 
+                       robot.x != robot.home_station_x || 
+                       robot.y != robot.home_station_y {
+                        return false;
+                    }
+                },
+                _ => {
+                    // Les collecteurs doivent être en mode Idle à la station (plus de ressources à collecter)
+                    if robot.mode != crate::types::RobotMode::Idle || 
+                       robot.x != robot.home_station_x || 
+                       robot.y != robot.home_station_y {
+                        return false;
+                    }
+                }
+            }
+        }
+        
+        true // Toutes les conditions sont remplies
+    }
+    
+    // Vérifier que toutes les ressources ont été collectées
+    fn are_all_resources_collected(&self, map: &Map) -> bool {
+        for y in 0..MAP_SIZE {
+            for x in 0..MAP_SIZE {
+                match map.get_tile(x, y) {
+                    TileType::Energy | TileType::Mineral | TileType::Scientific => {
+                        return false; // Il reste encore des ressources
+                    },
+                    _ => {} // Les autres types ne nous intéressent pas
+                }
+            }
+        }
+        true // Aucune ressource trouvée
     }
 }
