@@ -215,6 +215,10 @@ impl Robot {
                 if self.x != self.home_station_x || self.y != self.home_station_y {
                     self.mode = RobotMode::ReturnToStation;
                     self.plan_path_to_station(map);
+                } else {
+                    // Si déjà à la station et plus de ressources, passer en mode Idle
+                    self.mode = RobotMode::Idle;
+                    println!("🏁 Robot collecteur #{} : Plus de ressources à collecter, passage en mode Idle", self.id);
                 }
             }
         }
@@ -255,6 +259,7 @@ impl Robot {
                     } else {
                         // Si pas de ressource trouvée, rester à la station en mode Idle
                         self.mode = RobotMode::Idle;
+                        println!("🏁 Robot collecteur #{} : Aucune ressource trouvée, reste en mode Idle", self.id);
                     }
                 }
             }
