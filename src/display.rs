@@ -23,7 +23,6 @@ impl Display {
         let map_top = 0;
         let map_left = 0;
         let map_width = MAP_SIZE as u16 * 2;
-        let _map_height = MAP_SIZE as u16;
 
         // Bordure supérieure
         stdout.execute(MoveTo(map_left, map_top))?;
