@@ -29,12 +29,13 @@ pub struct RobotData {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct StationData {
     pub energy_reserves: u32,               // Réserves d'énergie de la station
-    pub collected_minerals: u32,            // Total de minerais collectés
-    pub collected_scientific_data: u32,     // Total de données scientifiques
+    pub collected_minerals: u32,            // Minerais collectés
+    pub collected_scientific_data: u32,     // Données scientifiques collectées
     pub exploration_percentage: f32,        // Pourcentage d'exploration globale
     pub conflict_count: usize,              // Nombre de conflits de données résolus
     pub robot_count: usize,                 // Nombre total de robots actifs
     pub status_message: String,             // Message de statut détaillé
+    pub mission_complete: bool,             // Mission terminée
 }
 
 // Structure pour transmettre l'état d'exploration via le réseau
@@ -83,7 +84,7 @@ pub fn create_robot_data(robot: &crate::robot::Robot) -> RobotData {
 }
 
 // Fonction utilitaire : convertir Station vers StationData pour transmission réseau
-pub fn create_station_data(station: &crate::station::Station) -> StationData {
+pub fn create_station_data(station: &crate::station::Station, map: &crate::map::Map) -> StationData {
     StationData {
         energy_reserves: station.energy_reserves,
         collected_minerals: station.collected_minerals,
@@ -92,6 +93,7 @@ pub fn create_station_data(station: &crate::station::Station) -> StationData {
         conflict_count: station.conflict_count,
         robot_count: station.next_robot_id - 1,    // Estimation du nombre de robots
         status_message: station.get_status(),
+        mission_complete: station.is_mission_complete(map),
     }
 }
 
@@ -127,8 +129,8 @@ pub fn create_simulation_state(
         robots_data.push(create_robot_data(robot));
     }
     
-    // Convertir les données de la station
-    let station_data = create_station_data(station);
+    // Convertir les données de la station (avec la référence à map)
+    let station_data = create_station_data(station, map);
     
     // Convertir les données d'exploration
     let exploration_data = create_exploration_data(station);

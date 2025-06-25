@@ -258,6 +258,12 @@ impl Station {
         true // Toutes les conditions sont remplies
     }
     
+    // Vérifier si la mission est terminée (toutes les ressources collectées)
+    pub fn is_mission_complete(&self, map: &Map) -> bool {
+        // Vérifier qu'il n'y a plus de ressources sur la carte
+        self.are_all_resources_collected(map)
+    }
+    
     // Vérifier que toutes les ressources ont été collectées
     fn are_all_resources_collected(&self, map: &Map) -> bool {
         for y in 0..MAP_SIZE {

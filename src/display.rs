@@ -41,10 +41,11 @@ impl Display {
                 
                 if x == map.station_x && y == map.station_y {
                     stdout.execute(SetForegroundColor(Color::Yellow))?;
-                    print!("[]");
+                    print!("🏠");
                 } else if let Some(robot) = robot_here {
                     stdout.execute(SetForegroundColor(Color::AnsiValue(robot.get_display_color())))?;
-                    print!("{}{}",robot.get_display_char(), robot.id);
+                    // Utiliser les emojis pour les robots
+                    print!("{}", robot.get_display_char());
                 } else {
                     let base_color = match map.get_tile(x, y) {
                         TileType::Empty => Color::White,
@@ -58,14 +59,14 @@ impl Display {
                         stdout.execute(SetForegroundColor(base_color))?;
                         match map.get_tile(x, y) {
                             TileType::Empty => print!("· "),
-                            TileType::Obstacle => print!("██"),
-                            TileType::Energy => print!("♦ "),
-                            TileType::Mineral => print!("★ "),
-                            TileType::Scientific => print!("○ "),
+                            TileType::Obstacle => print!("🧱"),
+                            TileType::Energy => print!("💎"),
+                            TileType::Mineral => print!("⭐"),
+                            TileType::Scientific => print!("🔬"),
                         }
                     } else {
                         stdout.execute(SetForegroundColor(Color::DarkGrey))?;
-                        print!("? ");
+                        print!("❓");
                     }
                 }
             }
@@ -103,10 +104,10 @@ impl Display {
         for robot in robots {
             stdout.execute(SetForegroundColor(Color::AnsiValue(robot.get_display_color())))?;
             let robot_type = match robot.robot_type {
-                RobotType::Explorer => "Explorateur",
-                RobotType::EnergyCollector => "Collecteur d'énergie",
-                RobotType::MineralCollector => "Collecteur de minerais",
-                RobotType::ScientificCollector => "Collecteur scientifique",
+                RobotType::Explorer => "🤖 Explorateur",
+                RobotType::EnergyCollector => "🔋 Collecteur d'énergie",
+                RobotType::MineralCollector => "⛏️  Collecteur de minerais",
+                RobotType::ScientificCollector => "🧪 Collecteur scientifique",
             };
             let mode = match robot.mode {
                 RobotMode::Exploring => "Exploration",
@@ -115,100 +116,141 @@ impl Display {
                 RobotMode::Idle => "Inactif",
             };
             println!(
-                "Robot #{}: {:<22} | Pos: ({:>2},{:>2}) | Énergie: {:>5.1}/{:<5.1} | Mode: {:<10} | Min: {:>2} | Sci: {:>2} | Exploré: {:>5.1}%",
+                "Robot #{}: {:<25} | Pos: ({:>2},{:>2}) | Énergie: {:>5.1}/{:<5.1} | Mode: {:<10} | Min: {:>2} | Sci: {:>2} | Exploré: {:>5.1}%",
                 robot.id, robot_type, robot.x, robot.y, robot.energy, robot.max_energy, 
                 mode, robot.minerals, robot.scientific_data, robot.get_exploration_percentage()
             );
         }
 
-        // Afficher la légende
+        // Afficher la légende MISE À JOUR avec emojis
         let legend_y = robots_y + 2 + robots.len() as u16;
         stdout.execute(MoveTo(0, legend_y))?;
         stdout.execute(SetForegroundColor(Color::White))?;
         println!("Légende :");
         stdout.execute(SetForegroundColor(Color::Yellow))?;
-        print!("[] = Station   ");
+        print!("🏠 = Station   ");
         stdout.execute(SetForegroundColor(Color::AnsiValue(9)))?;
-        print!("E# = Explorateur   ");
+        print!("🤖 = Explorateur   ");
         stdout.execute(SetForegroundColor(Color::AnsiValue(10)))?;
-        print!("P# = Collecteur d'énergie   ");
+        print!("🔋 = Collecteur d'énergie   ");
         stdout.execute(SetForegroundColor(Color::AnsiValue(13)))?;
-        print!("M# = Collecteur de minerais   ");
+        print!("⛏️ = Collecteur de minerais   ");
         stdout.execute(SetForegroundColor(Color::AnsiValue(12)))?;
-        println!("S# = Collecteur scientifique");
+        println!("🧪 = Collecteur scientifique");
         stdout.execute(SetForegroundColor(Color::Green))?;
-        print!("♦ = Énergie   ");
+        print!("💎 = Énergie   ");
         stdout.execute(SetForegroundColor(Color::Magenta))?;
-        print!("★ = Minerai   ");
+        print!("⭐ = Minerai   ");
         stdout.execute(SetForegroundColor(Color::Blue))?;
-        print!("○ = Intérêt scientifique   ");
+        print!("🔬 = Intérêt scientifique   ");
         stdout.execute(SetForegroundColor(Color::DarkGrey))?;
-        print!("██ = Obstacle   ");
+        print!("🧱 = Obstacle   ");
         stdout.execute(SetForegroundColor(Color::DarkGrey))?;
-        println!("? = Non exploré");
+        println!("❓ = Non exploré");
 
         stdout.flush()?;
         Ok(())
     }
 
-    pub fn render_mission_complete(map: &Map, station: &Station, robots: &Vec<Robot>) -> Result<()> {
-        // D'abord afficher la carte normale
-        Self::render(map, station, robots)?;
-        
+    pub fn render_mission_complete(_map: &Map, station: &Station, robots: &Vec<Robot>) -> Result<()> {
         let mut stdout = stdout();
         
-        // Calculer la position centrale pour le message
-        let center_x = MAP_SIZE as u16;
-        let center_y = (MAP_SIZE / 2) as u16;
+        // Effacer complètement l'écran
+        stdout.execute(Clear(ClearType::All))?;
         
-        // Créer un cadre pour le message
+        // Calculer la position centrale pour le message
+        let center_x = 5;
+        let center_y = 3;
+        
+        // Créer un cadre pour le message de mission terminée - VERSION AMÉLIORÉE
         let message_lines = vec![
-            "╔════════════════════════════════════╗",
-            "║                                    ║",
-            "║        🎉 MISSION COMPLETE! 🎉     ║",
-            "║                                    ║",
-            "║     Exoplanète entièrement         ║",
-            "║       explorée et exploitée!       ║",
-            "║                                    ║",
-            "║   Toutes les ressources récoltées  ║",
-            "║     Tous les robots à la base      ║",
-            "║                                    ║",
-            "║        Félicitations! 🚀           ║",
-            "║                                    ║",
-            "╚════════════════════════════════════╝",
+            "╔══════════════════════════════════════════════════════════════════╗",
+            "║                                                                  ║",
+            "║      🎉🚀 MISSION EREEA ACCOMPLIE AVEC SUCCÈS! 🚀🎉           ║",
+            "║                                                                  ║",
+            "║            🌍 EXOPLANÈTE ENTIÈREMENT EXPLORÉE 🌍               ║",
+            "║                                                                  ║",
+            "║                   ✅ OBJECTIFS ATTEINTS ✅                       ║",
+            "║                                                                  ║",
+            "║             🔍 Exploration complète: 100%                        ║",
+            "║             💎 Toutes les ressources collectées                  ║",
+            "║             🤖 Tous les robots rapatriés                         ║",
+            "║             🏠 Retour sécurisé à la station                      ║",
+            "║                                                                  ║",
+            "║                      🏆 FÉLICITATIONS! 🏆                       ║",
+            "║                                                                  ║",
+            "║        L'humanité peut désormais coloniser cette                 ║",
+            "║           exoplanète en toute sécurité!                          ║",
+            "║                                                                  ║",
+            "║                    🌟 MISSION RÉUSSIE 🌟                        ║",
+            "║                                                                  ║",
+            "╚══════════════════════════════════════════════════════════════════╝",
         ];
         
         // Afficher le message au centre de l'écran
         for (i, line) in message_lines.iter().enumerate() {
-            stdout.execute(MoveTo(center_x, center_y + i as u16 - 6))?;
+            stdout.execute(MoveTo(center_x, center_y + i as u16))?;
             stdout.execute(SetForegroundColor(Color::Yellow))?;
             print!("{}", line);
         }
         
         // Afficher les statistiques finales
-        stdout.execute(MoveTo(center_x, center_y + 8))?;
+        stdout.execute(MoveTo(center_x + 5, center_y + message_lines.len() as u16 + 2))?;
+        stdout.execute(SetForegroundColor(Color::Cyan))?;
+        println!("🎯 STATISTIQUES DE LA MISSION:");
+        
+        stdout.execute(MoveTo(center_x + 8, center_y + message_lines.len() as u16 + 4))?;
         stdout.execute(SetForegroundColor(Color::Green))?;
-        println!("📊 STATISTIQUES FINALES:");
+        println!("📊 Exoplanète cartographiée à 100%");
         
-        stdout.execute(MoveTo(center_x, center_y + 9))?;
+        stdout.execute(MoveTo(center_x + 8, center_y + message_lines.len() as u16 + 5))?;
+        println!("💎 Minerais collectés: {}", station.collected_minerals);
+        
+        stdout.execute(MoveTo(center_x + 8, center_y + message_lines.len() as u16 + 6))?;
+        println!("🧪 Données scientifiques: {}", station.collected_scientific_data);
+        
+        stdout.execute(MoveTo(center_x + 8, center_y + message_lines.len() as u16 + 7))?;
+        println!("🤖 Robots déployés: {}", robots.len());
+        
+        stdout.execute(MoveTo(center_x + 8, center_y + message_lines.len() as u16 + 8))?;
+        println!("⚔️  Conflits résolus: {}", station.conflict_count);
+        
+        // Afficher les types de robots utilisés
+        stdout.execute(MoveTo(center_x + 8, center_y + message_lines.len() as u16 + 10))?;
         stdout.execute(SetForegroundColor(Color::White))?;
-        println!("• Carte explorée: 100%");
+        println!("🛠️  ROBOTS UTILISÉS:");
         
-        stdout.execute(MoveTo(center_x, center_y + 10))?;
-        println!("• Minerais collectés: {}", station.collected_minerals);
+        stdout.execute(MoveTo(center_x + 10, center_y + message_lines.len() as u16 + 11))?;
+        stdout.execute(SetForegroundColor(Color::AnsiValue(9)))?;
+        print!("🤖 Explorateurs   ");
+        stdout.execute(SetForegroundColor(Color::AnsiValue(10)))?;
+        print!("🔋 Collecteurs d'énergie   ");
+        stdout.execute(SetForegroundColor(Color::AnsiValue(13)))?;
+        println!("⛏️  Collecteurs de minerais");
         
-        stdout.execute(MoveTo(center_x, center_y + 11))?;
-        println!("• Données scientifiques: {}", station.collected_scientific_data);
+        stdout.execute(MoveTo(center_x + 10, center_y + message_lines.len() as u16 + 12))?;
+        stdout.execute(SetForegroundColor(Color::AnsiValue(12)))?;
+        print!("🧪 Collecteurs scientifiques   ");
+        stdout.execute(SetForegroundColor(Color::White))?;
+        println!("- Tous revenus sains et saufs!");
         
-        stdout.execute(MoveTo(center_x, center_y + 12))?;
-        println!("• Robots déployés: {}", robots.len());
-        
-        stdout.execute(MoveTo(center_x, center_y + 13))?;
-        println!("• Conflits résolus: {}", station.conflict_count);
-        
-        stdout.execute(MoveTo(center_x, center_y + 15))?;
+        // Instructions pour quitter
+        stdout.execute(MoveTo(center_x + 15, center_y + message_lines.len() as u16 + 15))?;
         stdout.execute(SetForegroundColor(Color::Red))?;
         println!("Appuyez sur Ctrl+C pour quitter...");
+        
+        // Petite animation bonus avec les emojis de robots
+        stdout.execute(MoveTo(center_x + 20, center_y + message_lines.len() as u16 + 17))?;
+        stdout.execute(SetForegroundColor(Color::AnsiValue(9)))?;
+        print!("🤖 ");
+        stdout.execute(SetForegroundColor(Color::AnsiValue(10)))?;
+        print!("🔋 ");
+        stdout.execute(SetForegroundColor(Color::AnsiValue(13)))?;
+        print!("⛏️  ");
+        stdout.execute(SetForegroundColor(Color::AnsiValue(12)))?;
+        print!("🧪 ");
+        stdout.execute(SetForegroundColor(Color::Yellow))?;
+        println!("← Nos héros!");
         
         stdout.flush()?;
         Ok(())
