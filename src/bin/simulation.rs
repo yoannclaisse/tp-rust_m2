@@ -164,18 +164,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                         
-                        // Logique de création de nouveaux robots (tous les 50 cycles)
-                        if iteration - last_robot_creation >= 50 {
-                            if let Some(new_robot) = station_lock.try_create_robot(&map_lock) {
-                                robots_lock.push(new_robot);
-                                last_robot_creation = iteration;
-                                server_log!("🤖 Nouveau robot déployé! Flotte totale: {} robots", robots_lock.len());
+                        // Vérifier si la mission est terminée AVANT de créer de nouveaux robots
+                        if station_lock.is_mission_complete(&map_lock) {
+                            server_log!("🎉 MISSION TERMINÉE! Toutes les ressources collectées!");
+                            // Continuer à diffuser l'état final mais ne plus créer de robots
+                        } else {
+                            // Logique de création de nouveaux robots (tous les 50 cycles)
+                            if iteration - last_robot_creation >= 50 {
+                                if let Some(new_robot) = station_lock.try_create_robot(&map_lock) {
+                                    robots_lock.push(new_robot);
+                                    last_robot_creation = iteration;
+                                    server_log!("🤖 Nouveau robot déployé! Flotte totale: {} robots", robots_lock.len());
+                                }
                             }
-                        }
-                        
-                        // Vérifier si la mission est terminée
-                        if station_lock.is_all_missions_complete(&map_lock, &robots_lock) {
-                            server_log!("🎉 MISSION TERMINÉE! Toutes les ressources collectées et robots rapatriés.");
                         }
                     },
                     _ => {

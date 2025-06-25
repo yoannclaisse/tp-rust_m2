@@ -128,10 +128,10 @@ impl Robot {
     // Caractère pour affichage selon le type de robot
     pub fn get_display_char(&self) -> &str {
         match self.robot_type {
-            RobotType::Explorer => "E",
-            RobotType::EnergyCollector => "P", // Power collector
-            RobotType::MineralCollector => "M",
-            RobotType::ScientificCollector => "S",
+            RobotType::Explorer => "🤖",
+            RobotType::EnergyCollector => "🔋",
+            RobotType::MineralCollector => "⛏️",
+            RobotType::ScientificCollector => "🧪",
         }
     }
     

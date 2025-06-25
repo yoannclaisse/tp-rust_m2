@@ -99,6 +99,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
         
+        // Vérifier si la mission est terminée - AVANT tout autre traitement
+        if state.station_data.mission_complete {
+            // Immédiatement effacer l'écran et afficher la victoire
+            stdout.execute(Clear(ClearType::All))?;
+            stdout.flush()?;
+            
+            // Afficher l'écran de victoire et arrêter la boucle
+            show_victory_screen(&state)?;
+            break;
+        }
+        
         // Ajouter des logs basés sur l'état de la simulation
         if state.iteration % 50 == 0 {
             display_state.add_log(format!("📊 Cycle {} - Exploration: {:.1}%", 
@@ -227,25 +238,25 @@ fn initialize_fixed_layout(stdout: &mut std::io::Stdout) -> Result<(), Box<dyn s
     // Contenu de la légende (fixe)
     stdout.execute(MoveTo(0, LEGEND_Y + 3))?;
     stdout.execute(SetForegroundColor(Color::Yellow))?;
-    print!("🏠 [] = Station     ");
+    print!("🏠 = Station     ");
     stdout.execute(SetForegroundColor(Color::AnsiValue(9)))?;
-    print!("🔍 E# = Explorateur     ");
+    print!("🤖 = Explorateur     ");
     stdout.execute(SetForegroundColor(Color::AnsiValue(10)))?;
-    print!("⚡ P# = Énergie     ");
+    print!("🔋 = Énergie     ");
     stdout.execute(SetForegroundColor(Color::AnsiValue(13)))?;
-    print!("⛏️  M# = Minerais");
+    print!("⛏️ = Minerais");
     
     stdout.execute(MoveTo(0, LEGEND_Y + 4))?;
     stdout.execute(SetForegroundColor(Color::AnsiValue(12)))?;
-    print!("🧪 S# = Scientifique     ");
+    print!("🧪 = Scientifique     ");
     stdout.execute(SetForegroundColor(Color::Green))?;
-    print!("♦ = Énergie     ");
+    print!("💎 = Énergie     ");
     stdout.execute(SetForegroundColor(Color::Magenta))?;
-    print!("★ = Minerai     ");
+    print!("⭐ = Minerai     ");
     stdout.execute(SetForegroundColor(Color::Blue))?;
-    print!("○ = Science     ");
+    print!("🔬 = Science     ");
     stdout.execute(SetForegroundColor(Color::DarkGrey))?;
-    print!("? = Inexploré");
+    print!("❓ = Inexploré");
     
     stdout.execute(MoveTo(0, LEGEND_Y + 5))?;
     stdout.execute(SetForegroundColor(Color::Red))?;
@@ -277,9 +288,9 @@ fn update_all_dynamic_content(state: &SimulationState, display_state: &mut Displ
             
             if x == state.map_data.station_x && y == state.map_data.station_y {
                 stdout.execute(SetForegroundColor(Color::Yellow))?;
-                print!("[]");
+                print!("🏠");
             } else if let Some(robot) = robot_here {
-                // Afficher le robot
+                // Afficher le robot avec emoji
                 let robot_color = match robot.robot_type {
                     RobotType::Explorer => Color::AnsiValue(9),
                     RobotType::EnergyCollector => Color::AnsiValue(10),
@@ -290,39 +301,39 @@ fn update_all_dynamic_content(state: &SimulationState, display_state: &mut Displ
                 stdout.execute(SetForegroundColor(robot_color))?;
                 
                 let display_char = match robot.robot_type {
-                    RobotType::Explorer => "E",
-                    RobotType::EnergyCollector => "P",
-                    RobotType::MineralCollector => "M",
-                    RobotType::ScientificCollector => "S",
+                    RobotType::Explorer => "🤖",
+                    RobotType::EnergyCollector => "🔋",
+                    RobotType::MineralCollector => "⛏️",
+                    RobotType::ScientificCollector => "🧪",
                 };
                 
-                print!("{}{}", display_char, robot.id);
+                print!("{}", display_char);
             } else {
                 // Afficher le terrain
                 if !state.exploration_data.explored_tiles[y][x] {
                     stdout.execute(SetForegroundColor(Color::DarkGrey))?;
-                    print!("? ");
+                    print!("❓");
                 } else {
                     match &state.map_data.tiles[y][x] {
                         TileType::Empty => {
                             stdout.execute(SetForegroundColor(Color::DarkGrey))?;
-                            print!("· ");
+                            print!("·");
                         },
                         TileType::Obstacle => {
                             stdout.execute(SetForegroundColor(Color::DarkGrey))?;
-                            print!("██");
+                            print!("🧱");
                         },
                         TileType::Energy => {
                             stdout.execute(SetForegroundColor(Color::Green))?;
-                            print!("♦ ");
+                            print!("💎");
                         },
                         TileType::Mineral => {
                             stdout.execute(SetForegroundColor(Color::Magenta))?;
-                            print!("★ ");
+                            print!("⭐");
                         },
                         TileType::Scientific => {
                             stdout.execute(SetForegroundColor(Color::Blue))?;
-                            print!("○ ");
+                            print!("🔬");
                         },
                     }
                 }
@@ -399,4 +410,130 @@ fn update_all_dynamic_content(state: &SimulationState, display_state: &mut Displ
     }
     
     Ok(())
+}
+
+// Nouvelle fonction pour afficher l'écran de victoire
+fn show_victory_screen(state: &SimulationState) -> Result<(), Box<dyn std::error::Error>> {
+    let mut stdout = stdout();
+    
+    // Triple effacement pour s'assurer que tout est effacé
+    stdout.execute(Clear(ClearType::All))?;
+    stdout.execute(MoveTo(0, 0))?;
+    stdout.flush()?;
+    
+    // Attendre un peu pour s'assurer que l'effacement est effectif
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    
+    // Calculer la position pour centrer verticalement
+    let center_x = 8;
+    let center_y = 2;
+    
+    // Créer un cadre pour le message de mission terminée
+    let message_lines = vec![
+        "╔════════════════════════════════════════════════════════════════════════╗",
+        "║                                                                        ║",
+        "║         🎉🚀 MISSION EREEA ACCOMPLIE AVEC SUCCÈS! 🚀🎉              ║",
+        "║                                                                        ║",
+        "║              🌍 EXOPLANÈTE ENTIÈREMENT EXPLORÉE 🌍                   ║",
+        "║                                                                        ║",
+        "║                     ✅ OBJECTIFS ATTEINTS ✅                         ║",
+        "║                                                                        ║",
+        "║               🔍 Exploration complète: 100%                           ║",
+        "║               💎 Toutes les ressources collectées                     ║",
+        "║               🤖 Tous les robots rapatriés                            ║",
+        "║               🏠 Retour sécurisé à la station                         ║",
+        "║                                                                        ║",
+        "║                        🏆 FÉLICITATIONS! 🏆                          ║",
+        "║                                                                        ║",
+        "║          L'humanité peut désormais coloniser cette                    ║",
+        "║             exoplanète en toute sécurité!                             ║",
+        "║                                                                        ║",
+        "║                      🌟 MISSION RÉUSSIE 🌟                           ║",
+        "║                                                                        ║",
+        "╚════════════════════════════════════════════════════════════════════════╝",
+    ];
+    
+    // Afficher le message principal
+    for (i, line) in message_lines.iter().enumerate() {
+        stdout.execute(MoveTo(center_x, center_y + i as u16))?;
+        stdout.execute(SetForegroundColor(Color::Yellow))?;
+        print!("{}", line);
+    }
+    
+    // Position pour les statistiques
+    let stats_y = center_y + message_lines.len() as u16 + 2;
+    
+    // Titre des statistiques
+    stdout.execute(MoveTo(center_x + 15, stats_y))?;
+    stdout.execute(SetForegroundColor(Color::Cyan))?;
+    print!("🎯 STATISTIQUES DE LA MISSION");
+    
+    // Statistiques détaillées
+    stdout.execute(MoveTo(center_x + 5, stats_y + 2))?;
+    stdout.execute(SetForegroundColor(Color::Green))?;
+    print!("📊 Exoplanète cartographiée à {:.1}%", state.station_data.exploration_percentage);
+    
+    stdout.execute(MoveTo(center_x + 5, stats_y + 3))?;
+    print!("💎 Minerais collectés: {}", state.station_data.collected_minerals);
+    
+    stdout.execute(MoveTo(center_x + 5, stats_y + 4))?;
+    print!("🧪 Données scientifiques: {}", state.station_data.collected_scientific_data);
+    
+    stdout.execute(MoveTo(center_x + 5, stats_y + 5))?;
+    print!("🤖 Robots déployés: {}", state.robots_data.len());
+    
+    stdout.execute(MoveTo(center_x + 5, stats_y + 6))?;
+    print!("⚔️  Conflits résolus: {}", state.station_data.conflict_count);
+    
+    stdout.execute(MoveTo(center_x + 5, stats_y + 7))?;
+    print!("🕒 Cycles de simulation: {}", state.iteration);
+    
+    // Section robots utilisés
+    stdout.execute(MoveTo(center_x + 5, stats_y + 9))?;
+    stdout.execute(SetForegroundColor(Color::White))?;
+    print!("🛠️  ÉQUIPE DE ROBOTS HÉROÏQUE:");
+    
+    stdout.execute(MoveTo(center_x + 8, stats_y + 10))?;
+    stdout.execute(SetForegroundColor(Color::AnsiValue(9)))?;
+    print!("🔍 Explorateurs   ");
+    stdout.execute(SetForegroundColor(Color::AnsiValue(10)))?;
+    print!("⚡ Collecteurs d'énergie   ");
+    stdout.execute(SetForegroundColor(Color::AnsiValue(13)))?;
+    print!("⛏️  Collecteurs de minerais");
+    
+    stdout.execute(MoveTo(center_x + 8, stats_y + 11))?;
+    stdout.execute(SetForegroundColor(Color::AnsiValue(12)))?;
+    print!("🧪 Collecteurs scientifiques ");
+    stdout.execute(SetForegroundColor(Color::Yellow))?;
+    print!("- Tous revenus sains et saufs!");
+    
+    // Animation des robots héros
+    stdout.execute(MoveTo(center_x + 25, stats_y + 13))?;
+    stdout.execute(SetForegroundColor(Color::AnsiValue(9)))?;
+    print!("🤖 ");
+    stdout.execute(SetForegroundColor(Color::AnsiValue(10)))?;
+    print!("🔋 ");
+    stdout.execute(SetForegroundColor(Color::AnsiValue(13)))?;
+    print!("⛏️  ");
+    stdout.execute(SetForegroundColor(Color::AnsiValue(12)))?;
+    print!("🧪 ");
+    stdout.execute(SetForegroundColor(Color::Yellow))?;
+    print!("← NOS HÉROS!");
+    
+    // Instructions de sortie
+    stdout.execute(MoveTo(center_x + 20, stats_y + 16))?;
+    stdout.execute(SetForegroundColor(Color::Red))?;
+    print!("Appuyez sur Ctrl+C pour quitter la mission");
+    
+    // Ligne de séparation finale
+    stdout.execute(MoveTo(center_x, stats_y + 18))?;
+    stdout.execute(SetForegroundColor(Color::Yellow))?;
+    print!("════════════════════════════════════════════════════════════════════════");
+    
+    stdout.flush()?;
+    
+    // Attendre indéfiniment que l'utilisateur quitte avec Ctrl+C
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
 }
