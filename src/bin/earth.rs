@@ -1,4 +1,8 @@
 // src/bin/earth.rs
+
+/// Module imports for the Earth control center application
+/// - TileType, MAP_SIZE, RobotType, RobotMode: Core simulation types
+/// - SimulationState, DEFAULT_PORT: Network communication structures
 use ereea::types::{TileType, MAP_SIZE, RobotType, RobotMode};
 use ereea::network::{SimulationState, DEFAULT_PORT};
 
@@ -13,54 +17,107 @@ use crossterm::{
 use tokio::net::TcpStream;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-// Structure pour tracker l'état de l'affichage
+/// Structure to track the display state of the terminal interface
+/// 
+/// This struct manages the dynamic content that changes during simulation,
+/// including initialization status and log message history.
+/// 
+/// # Fields
+/// * `initialized` - Boolean flag to track if the fixed UI layout has been drawn
+/// * `log_messages` - Rolling buffer of mission log messages (FIFO queue)
+/// * `max_log_lines` - Maximum number of log lines to display (prevents overflow)
 struct DisplayState {
+    /// Flag indicating if the static UI layout has been initialized
     initialized: bool,
+    /// FIFO queue containing recent log messages for mission tracking
     log_messages: VecDeque<String>,
+    /// Maximum number of log lines to keep in memory and display
     max_log_lines: usize,
 }
 
 impl DisplayState {
+    /// Creates a new DisplayState instance with default values
+    /// 
+    /// # Returns
+    /// * `Self` - New DisplayState with uninitialized state and empty log queue
     fn new() -> Self {
         Self {
-            initialized: false,
-            log_messages: VecDeque::new(),
-            max_log_lines: 8,
+            initialized: false,        // UI layout not yet drawn
+            log_messages: VecDeque::new(), // Empty message queue
+            max_log_lines: 8,          // Limit to 8 visible log lines
         }
     }
     
+    /// Adds a new log message to the display queue
+    /// 
+    /// Implements a rolling buffer - when max capacity is reached,
+    /// the oldest message is removed to make space for the new one.
+    /// 
+    /// # Parameters
+    /// * `message` - String containing the log message to add
     fn add_log(&mut self, message: String) {
+        // Add new message to the end of the queue
         self.log_messages.push_back(message);
+        
+        // Remove oldest message if we exceed the maximum limit
         if self.log_messages.len() > self.max_log_lines {
             self.log_messages.pop_front();
         }
     }
 }
 
-// Positions fixes pour l'interface - Layout réorganisé
-const HEADER_Y: u16 = 0;
-const STATUS_Y: u16 = 3;
-const MAP_START_Y: u16 = 5;
-const MAP_LEFT: u16 = 2;
-const STATION_INFO_Y: u16 = MAP_START_Y + MAP_SIZE as u16 + 4;
-const ROBOTS_INFO_Y: u16 = STATION_INFO_Y + 4;
-const LOGS_Y: u16 = ROBOTS_INFO_Y + 8;  // Logs after robots
-const LEGEND_Y: u16 = LOGS_Y + 12;      // Legend at the bottom
+/// Fixed Y-coordinate positions for the terminal user interface layout
+/// These constants define the vertical positioning of each UI section
+/// to maintain a consistent and organized display structure.
 
+/// Header section at the top of the screen (title and branding)
+const HEADER_Y: u16 = 0;
+/// Status bar showing current simulation metrics (cycle, exploration %, etc.)
+const STATUS_Y: u16 = 3;
+/// Starting Y position for the exploration map display
+const MAP_START_Y: u16 = 5;
+/// Left margin for the map display (X offset)
+const MAP_LEFT: u16 = 2;
+/// Station information section (resources, conflicts, etc.)
+const STATION_INFO_Y: u16 = MAP_START_Y + MAP_SIZE as u16 + 4;
+/// Robot status section (individual robot details)
+const ROBOTS_INFO_Y: u16 = STATION_INFO_Y + 4;
+/// Mission log section (recent events and notifications)
+const LOGS_Y: u16 = ROBOTS_INFO_Y + 8;
+/// Legend section at the bottom (symbol explanations)
+const LEGEND_Y: u16 = LOGS_Y + 12;
+
+/// Main asynchronous entry point for the Earth control center application
+/// 
+/// This function establishes a TCP connection to the simulation server,
+/// receives real-time simulation data, and renders a comprehensive
+/// terminal-based user interface for mission monitoring.
+/// 
+/// # Returns
+/// * `Result<(), Box<dyn std::error::Error>>` - Success or any error encountered
+/// 
+/// # Errors
+/// * Connection errors if simulation server is not running
+/// * Terminal manipulation errors
+/// * JSON deserialization errors from corrupted data
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Configuration du terminal
+    // Enable raw terminal mode for direct character input and cursor control
+    // This allows us to position text precisely and handle input without buffering
     enable_raw_mode()?;
     
-    // Initialiser l'affichage
+    // Clear the entire terminal screen to start with a clean slate
     let mut stdout = stdout();
     stdout.execute(Clear(ClearType::All))?;
     
-    // Connexion au serveur de simulation
+    // Attempt to establish TCP connection to the simulation server
+    // The server should be running on localhost at the default port
     let stream = match TcpStream::connect(format!("127.0.0.1:{}", DEFAULT_PORT)).await {
         Ok(stream) => stream,
         Err(e) => {
+            // Restore normal terminal mode before exiting on error
             disable_raw_mode()?;
+            // Provide helpful error messages and troubleshooting tips
             eprintln!("❌ Erreur de connexion au serveur: {}", e);
             eprintln!("💡 Assurez-vous que le serveur de simulation est en cours d'exécution.");
             eprintln!("🚀 Démarrez-le avec: cargo run --bin simulation");
@@ -68,131 +125,189 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     
+    // Create a buffered reader for efficient line-by-line data reception
     let mut reader = BufReader::new(stream);
-    let mut line = String::new();
-    let mut display_state = DisplayState::new();
+    let mut line = String::new(); // Buffer for incoming data lines
+    let mut display_state = DisplayState::new(); // Initialize UI state manager
     
-    // Message initial
+    // Add initial connection status messages to the log
     display_state.add_log("🌍 Connexion établie avec la station EREEA".to_string());
     display_state.add_log("📡 Réception des données de simulation...".to_string());
     
+    // Main event loop - continuously receive and process simulation data
     loop {
-        // Lire les données du serveur
+        // Clear the line buffer for the next message
         line.clear();
         
+        // Read a line of data from the simulation server
+        // If connection is lost, log the error and exit gracefully
         if let Err(_) = reader.read_line(&mut line).await {
             display_state.add_log("❌ Connexion perdue avec la station".to_string());
             break;
         }
         
+        // Empty line indicates end of transmission
         if line.is_empty() {
             display_state.add_log("📡 Fin de transmission".to_string());
             break;
         }
         
-        // Désérialiser l'état de la simulation
+        // Attempt to deserialize the JSON data into SimulationState struct
         let state: SimulationState = match serde_json::from_str(&line) {
             Ok(state) => state,
             Err(_) => {
+                // Log corrupted data errors and continue (don't crash)
                 display_state.add_log("⚠️ Données corrompues reçues".to_string());
                 continue;
             }
         };
         
-        // Vérifier si la mission est terminée - AVANT tout autre traitement
+        // CHECK FOR MISSION COMPLETION - This must be first priority!
+        // When mission is complete, immediately switch to victory screen
         if state.station_data.mission_complete {
-            // Immédiatement effacer l'écran et afficher la victoire
+            // Immediately clear screen and show victory - no further processing
             stdout.execute(Clear(ClearType::All))?;
             stdout.flush()?;
             
-            // Afficher l'écran de victoire et arrêter la boucle
+            // Display victory screen and terminate the main loop
             show_victory_screen(&state)?;
+            
+            // Auto-exit after 10 seconds (user can still Ctrl+C earlier)
+            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
             break;
         }
         
-        // Ajouter des logs basés sur l'état de la simulation
+        // DYNAMIC LOG GENERATION based on simulation progress
+        // Generate contextual log messages every 50 iterations to avoid spam
         if state.iteration % 50 == 0 {
-            display_state.add_log(format!("📊 Cycle {} - Exploration: {:.1}%", 
-                                        state.iteration, 
-                                        state.station_data.exploration_percentage));
+            let exploration_pct = state.station_data.exploration_percentage;
+            
+            // Generate phase-appropriate messages based on exploration progress
+            if exploration_pct < 30.0 {
+                // Early exploration phase - scouts mapping the terrain
+                display_state.add_log(format!("🔍 Exploration initiale: {:.1}% - Collecteurs en attente", exploration_pct));
+            } else if exploration_pct < 60.0 {
+                // Mid-phase - resource collection beginning
+                display_state.add_log(format!("⚡ Collecte d'énergie/minerais: {:.1}%", exploration_pct));
+            } else if exploration_pct < 100.0 {
+                // Late phase - scientific data collection
+                display_state.add_log(format!("🧪 Collecte scientifique: {:.1}%", exploration_pct));
+            } else {
+                // Final phase - mission completion preparation
+                display_state.add_log("🏁 Exploration terminée - Finalisation en cours".to_string());
+            }
         }
         
-        // Vérifier si un nouveau robot a été créé
+        // LOG NEW ROBOT DEPLOYMENTS
+        // Check if fleet has expanded beyond the initial 4 robots
         if state.robots_data.len() > 4 && state.iteration % 50 == 1 {
             display_state.add_log(format!("🤖 Nouveau robot déployé - Flotte: {} robots", 
                                         state.robots_data.len()));
         }
         
-        // Vérifier si la mission est proche de la fin
+        // MISSION PROGRESS WARNINGS
+        // Alert when mission is near completion
         if state.station_data.exploration_percentage > 90.0 {
             display_state.add_log("🎯 Mission proche de l'achèvement!".to_string());
         }
         
-        // Afficher l'état avec la nouvelle interface
+        // RENDER THE COMPLETE INTERFACE
+        // Update all dynamic content while preserving static layout
         render_interface(&state, &mut display_state)?;
     }
     
-    // Restaurer le terminal
+    // CLEANUP: Restore normal terminal behavior before exiting
     disable_raw_mode()?;
     Ok(())
 }
 
-// Fonction principale de rendu avec mise à jour dynamique complète
+/// Main rendering coordinator for the terminal interface
+/// 
+/// This function manages the two-phase rendering approach:
+/// 1. One-time initialization of static UI elements
+/// 2. Continuous updates of dynamic content (data that changes)
+/// 
+/// # Parameters
+/// * `state` - Current simulation state containing all game data
+/// * `display_state` - Mutable UI state tracker for managing display updates
+/// 
+/// # Returns
+/// * `Result<(), Box<dyn std::error::Error>>` - Success or rendering error
 fn render_interface(state: &SimulationState, display_state: &mut DisplayState) -> Result<(), Box<dyn std::error::Error>> {
     let mut stdout = stdout();
     
-    // Initialiser la structure fixe une seule fois
+    // PHASE 1: Initialize static layout (only once per session)
+    // Static elements include borders, titles, and structural components
     if !display_state.initialized {
         initialize_fixed_layout(&mut stdout)?;
         display_state.initialized = true;
     }
     
-    // Mettre à jour TOUT le contenu dynamique
+    // PHASE 2: Update all dynamic content (every frame)
+    // Dynamic elements include data values, robot positions, and logs
     update_all_dynamic_content(state, display_state, &mut stdout)?;
     
+    // Force immediate output to terminal (flush buffer)
     stdout.flush()?;
     Ok(())
 }
 
-// Initialisation de la structure fixe (une seule fois)
+/// Initializes the static UI layout elements (borders, titles, structure)
+/// 
+/// This function draws all the fixed visual elements that don't change
+/// during simulation execution. Called only once to optimize performance.
+/// 
+/// # Parameters
+/// * `stdout` - Mutable reference to stdout for direct terminal writing
+/// 
+/// # Returns
+/// * `Result<(), Box<dyn std::error::Error>>` - Success or terminal manipulation error
 fn initialize_fixed_layout(stdout: &mut std::io::Stdout) -> Result<(), Box<dyn std::error::Error>> {
-    // En-tête fixe
+    // HEADER SECTION: Main title and branding
+    // Draw the top border of the header box
     stdout.execute(MoveTo(0, HEADER_Y))?;
     stdout.execute(SetForegroundColor(Color::Cyan))?;
     print!("╔══════════════════════════════════════════════════════════════════════════════╗");
+    
+    // Header title line with mission branding
     stdout.execute(MoveTo(0, HEADER_Y + 1))?;
     print!("║            🌍 CENTRE DE CONTRÔLE TERRE - MISSION EREEA 🚀                   ║");
+    
+    // Bottom border of header box
     stdout.execute(MoveTo(0, HEADER_Y + 2))?;
     print!("╚══════════════════════════════════════════════════════════════════════════════╝");
     
-    // Titre de la carte
+    // MAP SECTION: Title and bordered container for the exploration map
     stdout.execute(MoveTo(MAP_LEFT, MAP_START_Y))?;
     stdout.execute(SetForegroundColor(Color::Yellow))?;
     print!("🗺️  CARTE DE L'EXOPLANÈTE");
     
-    // Bordures de la carte
+    // Calculate map display width (each tile takes 2 characters)
     let map_width = MAP_SIZE as u16 * 2;
+    
+    // Top border of map container
     stdout.execute(MoveTo(MAP_LEFT, MAP_START_Y + 1))?;
     stdout.execute(SetForegroundColor(Color::DarkGrey))?;
     print!("╔");
     for _ in 0..map_width { print!("═"); }
     print!("╗");
     
-    // Lignes de la carte avec bordures
+    // Side borders for each map row (content will be filled dynamically)
     for y in 0..MAP_SIZE {
         stdout.execute(MoveTo(MAP_LEFT, MAP_START_Y + 2 + y as u16))?;
         print!("║");
+        // Fill with spaces (actual map content added dynamically)
         for _ in 0..map_width { print!(" "); }
         print!("║");
     }
     
-    // Bordure inférieure
+    // Bottom border of map container
     stdout.execute(MoveTo(MAP_LEFT, MAP_START_Y + 2 + MAP_SIZE as u16))?;
     print!("╚");
     for _ in 0..map_width { print!("═"); }
     print!("╝");
     
-    // Section Station (structure fixe)
+    // STATION INFORMATION SECTION: Resource and operational data
     stdout.execute(MoveTo(0, STATION_INFO_Y))?;
     stdout.execute(SetForegroundColor(Color::Yellow))?;
     print!("╔══════════════════════════════════════════════════════════════════════════════╗");
@@ -201,7 +316,7 @@ fn initialize_fixed_layout(stdout: &mut std::io::Stdout) -> Result<(), Box<dyn s
     stdout.execute(MoveTo(0, STATION_INFO_Y + 2))?;
     print!("╚══════════════════════════════════════════════════════════════════════════════╝");
     
-    // Section Robots (structure fixe)
+    // ROBOT STATUS SECTION: Individual robot monitoring
     stdout.execute(MoveTo(0, ROBOTS_INFO_Y))?;
     stdout.execute(SetForegroundColor(Color::Cyan))?;
     print!("╔══════════════════════════════════════════════════════════════════════════════╗");
@@ -210,7 +325,7 @@ fn initialize_fixed_layout(stdout: &mut std::io::Stdout) -> Result<(), Box<dyn s
     stdout.execute(MoveTo(0, ROBOTS_INFO_Y + 2))?;
     print!("╚══════════════════════════════════════════════════════════════════════════════╝");
     
-    // Section Logs (nouvelle section)
+    // MISSION LOG SECTION: Recent events and notifications
     stdout.execute(MoveTo(0, LOGS_Y))?;
     stdout.execute(SetForegroundColor(Color::Green))?;
     print!("╔══════════════════════════════════════════════════════════════════════════════╗");
@@ -219,14 +334,14 @@ fn initialize_fixed_layout(stdout: &mut std::io::Stdout) -> Result<(), Box<dyn s
     stdout.execute(MoveTo(0, LOGS_Y + 2))?;
     print!("╚══════════════════════════════════════════════════════════════════════════════╝");
     
-    // Lignes vides pour les logs
+    // Pre-allocate empty lines for log messages (will be filled dynamically)
     for i in 0..8 {
         stdout.execute(MoveTo(0, LOGS_Y + 3 + i))?;
         stdout.execute(SetForegroundColor(Color::White))?;
-        print!("{:<80}", "");
+        print!("{:<80}", ""); // 80-character wide empty line
     }
     
-    // Légende (structure fixe)
+    // LEGEND SECTION: Symbol explanations for map and UI elements
     stdout.execute(MoveTo(0, LEGEND_Y))?;
     stdout.execute(SetForegroundColor(Color::White))?;
     print!("╔══════════════════════════════════════════════════════════════════════════════╗");
@@ -235,29 +350,31 @@ fn initialize_fixed_layout(stdout: &mut std::io::Stdout) -> Result<(), Box<dyn s
     stdout.execute(MoveTo(0, LEGEND_Y + 2))?;
     print!("╚══════════════════════════════════════════════════════════════════════════════╝");
     
-    // Contenu de la légende (fixe)
+    // LEGEND CONTENT: Map symbols and their meanings (line 1)
     stdout.execute(MoveTo(0, LEGEND_Y + 3))?;
     stdout.execute(SetForegroundColor(Color::Yellow))?;
-    print!("🏠 = Station     ");
+    print!("🏠 = Station     ");       // Home base location
     stdout.execute(SetForegroundColor(Color::AnsiValue(9)))?;
-    print!("🤖 = Explorateur     ");
+    print!("🤖 = Explorateur     ");   // Explorer robot type
     stdout.execute(SetForegroundColor(Color::AnsiValue(10)))?;
-    print!("🔋 = Énergie     ");
+    print!("🔋 = Énergie     ");       // Energy collector robot
     stdout.execute(SetForegroundColor(Color::AnsiValue(13)))?;
-    print!("⛏️ = Minerais");
+    print!("⛏️ = Minerais");           // Mineral collector robot
     
+    // LEGEND CONTENT: Additional symbols (line 2)
     stdout.execute(MoveTo(0, LEGEND_Y + 4))?;
     stdout.execute(SetForegroundColor(Color::AnsiValue(12)))?;
-    print!("🧪 = Scientifique     ");
+    print!("🧪 = Scientifique     ");  // Scientific collector robot
     stdout.execute(SetForegroundColor(Color::Green))?;
-    print!("💎 = Énergie     ");
+    print!("💎 = Énergie     ");       // Energy resource tile
     stdout.execute(SetForegroundColor(Color::Magenta))?;
-    print!("⭐ = Minerai     ");
+    print!("⭐ = Minerai     ");       // Mineral resource tile
     stdout.execute(SetForegroundColor(Color::Blue))?;
-    print!("🔬 = Science     ");
+    print!("🔬 = Science     ");       // Scientific resource tile
     stdout.execute(SetForegroundColor(Color::DarkGrey))?;
-    print!("❓ = Inexploré");
+    print!("❓ = Inexploré");          // Unexplored tile
     
+    // USER INSTRUCTIONS: Exit command
     stdout.execute(MoveTo(0, LEGEND_Y + 5))?;
     stdout.execute(SetForegroundColor(Color::Red))?;
     print!("🚨 Ctrl+C pour quitter la mission");
@@ -265,75 +382,106 @@ fn initialize_fixed_layout(stdout: &mut std::io::Stdout) -> Result<(), Box<dyn s
     Ok(())
 }
 
-// Mise à jour de TOUT le contenu dynamique
+/// Updates all dynamic content in the interface (data that changes each frame)
+/// 
+/// This function refreshes all variable information including:
+/// - Status bar metrics
+/// - Complete map state with robots and resources
+/// - Station operational data
+/// - Individual robot status information
+/// - Mission log messages
+/// 
+/// # Parameters
+/// * `state` - Current simulation state with all updated data
+/// * `display_state` - UI state manager for log handling
+/// * `stdout` - Direct terminal output handle
+/// 
+/// # Returns
+/// * `Result<(), Box<dyn std::error::Error>>` - Success or rendering error
 fn update_all_dynamic_content(state: &SimulationState, display_state: &mut DisplayState, stdout: &mut std::io::Stdout) -> Result<(), Box<dyn std::error::Error>> {
-    // 1. Mettre à jour les informations de statut en haut
+    // 1. STATUS BAR UPDATE: Top-level mission metrics
+    // Display cycle count, exploration progress, fleet size, and resource totals
     stdout.execute(MoveTo(0, STATUS_Y))?;
     stdout.execute(SetForegroundColor(Color::White))?;
     print!("📊 Cycle: {:>4} | 🌍 Exploration: {:>5.1}% | 🤖 Robots: {:>2} | 🔋 Énergie: {:>3} | ⛏️  Minerais: {:>3} | 🧪 Science: {:>3}        ",
-           state.iteration,
-           state.station_data.exploration_percentage,
-           state.station_data.robot_count,
-           state.station_data.energy_reserves,
-           state.station_data.collected_minerals,
-           state.station_data.collected_scientific_data);
+           state.iteration,                                    // Current simulation cycle
+           state.station_data.exploration_percentage,          // % of map explored
+           state.station_data.robot_count,                     // Total active robots
+           state.station_data.energy_reserves,                 // Energy at station
+           state.station_data.collected_minerals,              // Minerals at station
+           state.station_data.collected_scientific_data);      // Science data at station
     
-    // 2. Mettre à jour TOUTE la carte
+    // 2. COMPLETE MAP UPDATE: Redraw entire exploration map each frame
+    // This ensures robot movement and resource changes are immediately visible
     for y in 0..MAP_SIZE {
         for x in 0..MAP_SIZE {
+            // Calculate exact screen position for this map tile
             stdout.execute(MoveTo(MAP_LEFT + 1 + (x as u16 * 2), MAP_START_Y + 2 + y as u16))?;
             
-            // Vérifier si un robot est sur cette case
+            // Check if any robot is currently positioned on this tile
             let robot_here = state.robots_data.iter().find(|r| r.x == x && r.y == y);
             
+            // PRIORITY 1: Station location (always visible and highest priority)
             if x == state.map_data.station_x && y == state.map_data.station_y {
                 stdout.execute(SetForegroundColor(Color::Yellow))?;
                 print!("🏠");
-            } else if let Some(robot) = robot_here {
-                // Afficher le robot avec emoji
+            }
+            // PRIORITY 2: Robots (when present, robots overlay terrain)
+            else if let Some(robot) = robot_here {
+                // Set robot color based on type for easy visual identification
                 let robot_color = match robot.robot_type {
-                    RobotType::Explorer => Color::AnsiValue(9),
-                    RobotType::EnergyCollector => Color::AnsiValue(10),
-                    RobotType::MineralCollector => Color::AnsiValue(13),
-                    RobotType::ScientificCollector => Color::AnsiValue(12),
+                    RobotType::Explorer => Color::AnsiValue(9),           // Red-ish
+                    RobotType::EnergyCollector => Color::AnsiValue(10),   // Green-ish
+                    RobotType::MineralCollector => Color::AnsiValue(13),  // Pink-ish
+                    RobotType::ScientificCollector => Color::AnsiValue(12), // Blue-ish
                 };
                 
                 stdout.execute(SetForegroundColor(robot_color))?;
                 
+                // Display robot type-specific emoji
                 let display_char = match robot.robot_type {
-                    RobotType::Explorer => "🤖",
-                    RobotType::EnergyCollector => "🔋",
-                    RobotType::MineralCollector => "⛏️",
-                    RobotType::ScientificCollector => "🧪",
+                    RobotType::Explorer => "🤖",        // General robot for exploration
+                    RobotType::EnergyCollector => "🔋", // Battery symbol
+                    RobotType::MineralCollector => "⛏️", // Pickaxe tool
+                    RobotType::ScientificCollector => "🧪", // Lab equipment
                 };
                 
                 print!("{}", display_char);
-            } else {
-                // Afficher le terrain
+            }
+            // PRIORITY 3: Terrain (underlying map features)
+            else {
+                // Check exploration status first
                 if !state.exploration_data.explored_tiles[y][x] {
+                    // Unexplored areas show as question marks
                     stdout.execute(SetForegroundColor(Color::DarkGrey))?;
                     print!("❓");
                 } else {
+                    // Explored areas show actual terrain/resource type
                     match &state.map_data.tiles[y][x] {
                         TileType::Empty => {
+                            // Empty space (walkable but no resources)
                             stdout.execute(SetForegroundColor(Color::DarkGrey))?;
-                            print!("·");
+                            print!("·"); // Small dot for empty tiles
                         },
                         TileType::Obstacle => {
+                            // Impassable terrain
                             stdout.execute(SetForegroundColor(Color::DarkGrey))?;
-                            print!("🧱");
+                            print!("🧱"); // Wall/brick symbol
                         },
                         TileType::Energy => {
+                            // Energy resource deposit
                             stdout.execute(SetForegroundColor(Color::Green))?;
-                            print!("💎");
+                            print!("💎"); // Gem symbol for energy
                         },
                         TileType::Mineral => {
+                            // Mineral resource deposit
                             stdout.execute(SetForegroundColor(Color::Magenta))?;
-                            print!("⭐");
+                            print!("⭐"); // Star symbol for minerals
                         },
                         TileType::Scientific => {
+                            // Scientific data location
                             stdout.execute(SetForegroundColor(Color::Blue))?;
-                            print!("🔬");
+                            print!("🔬"); // Microscope for science
                         },
                     }
                 }
@@ -341,22 +489,23 @@ fn update_all_dynamic_content(state: &SimulationState, display_state: &mut Displ
         }
     }
     
-    // 3. Mettre à jour les informations de la station
+    // 3. STATION INFORMATION UPDATE: Operational metrics and status
     stdout.execute(MoveTo(0, STATION_INFO_Y + 3))?;
     stdout.execute(SetForegroundColor(Color::White))?;
     print!("📊 🔋 Énergie: {:>3} | ⛏️  Minerais: {:>3} | 🧪 Science: {:>3} | ⚔️  Conflits: {:>3}                          ",
-           state.station_data.energy_reserves,
-           state.station_data.collected_minerals,
-           state.station_data.collected_scientific_data,
-           state.station_data.conflict_count);
+           state.station_data.energy_reserves,         // Energy stockpile
+           state.station_data.collected_minerals,       // Mineral stockpile
+           state.station_data.collected_scientific_data, // Science data collected
+           state.station_data.conflict_count);          // Number of conflicts resolved
     
-    // 4. Mettre à jour les informations des robots (limité à 5 robots pour économiser l'espace)
+    // 4. ROBOT STATUS UPDATE: Individual robot monitoring (limited to 5 for space)
     for i in 0..5 {
         stdout.execute(MoveTo(0, ROBOTS_INFO_Y + 3 + i as u16))?;
         
         if i < state.robots_data.len() {
             let robot = &state.robots_data[i];
             
+            // Set robot-specific color for consistency with map display
             let robot_color = match robot.robot_type {
                 RobotType::Explorer => Color::AnsiValue(9),
                 RobotType::EnergyCollector => Color::AnsiValue(10),
@@ -366,6 +515,7 @@ fn update_all_dynamic_content(state: &SimulationState, display_state: &mut Displ
             
             stdout.execute(SetForegroundColor(robot_color))?;
             
+            // Generate human-readable robot type string
             let robot_type_str = match robot.robot_type {
                 RobotType::Explorer => "🔍 Explorateur",
                 RobotType::EnergyCollector => "⚡ Énergie",
@@ -373,62 +523,75 @@ fn update_all_dynamic_content(state: &SimulationState, display_state: &mut Displ
                 RobotType::ScientificCollector => "🧪 Science",
             };
             
+            // Generate current activity/mode string
             let mode_str = match robot.mode {
-                RobotMode::Exploring => "🚶 Exploration",
-                RobotMode::Collecting => "📦 Collecte",
-                RobotMode::ReturnToStation => "🏠 Retour",
-                RobotMode::Idle => "😴 Repos",
+                RobotMode::Exploring => "🚶 Exploration",      // Walking around mapping
+                RobotMode::Collecting => "📦 Collecte",        // Gathering resources
+                RobotMode::ReturnToStation => "🏠 Retour",     // Heading home
+                RobotMode::Idle => "😴 Repos",                 // Waiting/inactive
             };
             
+            // Display comprehensive robot status line
             print!("Robot #{:>2}: {:<12} | 📍({:>2},{:>2}) | 🔋{:>5.1}/{:<5.1} | {} | Min:{:>2} Sci:{:>2} | 📊{:>5.1}%            ",
-                   robot.id,
-                   robot_type_str,
-                   robot.x, robot.y,
-                   robot.energy, robot.max_energy,
-                   mode_str,
-                   robot.minerals,
-                   robot.scientific_data,
-                   robot.exploration_percentage);
+                   robot.id,                        // Unique robot identifier
+                   robot_type_str,                  // Robot type and role
+                   robot.x, robot.y,               // Current coordinates
+                   robot.energy, robot.max_energy, // Energy: current/maximum
+                   mode_str,                        // Current activity
+                   robot.minerals,                  // Minerals carried
+                   robot.scientific_data,           // Science data carried
+                   robot.exploration_percentage);   // Personal exploration contribution
         } else {
-            // Effacer les lignes des robots qui n'existent plus
+            // Clear unused robot status lines to prevent ghost data
             stdout.execute(SetForegroundColor(Color::White))?;
-            print!("{:<90}", "");
+            print!("{:<90}", ""); // 90-character blank line
         }
     }
     
-    // 5. Afficher les logs dans la section dédiée
+    // 5. MISSION LOG UPDATE: Display recent log messages
     for (i, log_line) in display_state.log_messages.iter().enumerate() {
         stdout.execute(MoveTo(0, LOGS_Y + 3 + i as u16))?;
         stdout.execute(SetForegroundColor(Color::White))?;
-        print!("{:<80}", log_line);
+        print!("{:<80}", log_line); // 80-character formatted log line
     }
     
-    // Effacer les lignes de logs non utilisées
+    // Clear any unused log lines to prevent old messages from persisting
     for i in display_state.log_messages.len()..display_state.max_log_lines {
         stdout.execute(MoveTo(0, LOGS_Y + 3 + i as u16))?;
-        print!("{:<80}", "");
+        print!("{:<80}", ""); // Blank line to clear old content
     }
     
     Ok(())
 }
 
-// Nouvelle fonction pour afficher l'écran de victoire
+/// Displays the mission completion victory screen
+/// 
+/// This function creates a full-screen celebration display when the mission
+/// is successfully completed. It shows mission statistics, robot achievements,
+/// and automatically exits after 10 seconds.
+/// 
+/// # Parameters
+/// * `state` - Final simulation state containing mission results
+/// 
+/// # Returns
+/// * `Result<(), Box<dyn std::error::Error>>` - Success or display error
 fn show_victory_screen(state: &SimulationState) -> Result<(), Box<dyn std::error::Error>> {
     let mut stdout = stdout();
     
-    // Triple effacement pour s'assurer que tout est effacé
+    // TRIPLE CLEAR: Ensure complete screen clearing
+    // Multiple clears guarantee old content is completely removed
     stdout.execute(Clear(ClearType::All))?;
     stdout.execute(MoveTo(0, 0))?;
     stdout.flush()?;
     
-    // Attendre un peu pour s'assurer que l'effacement est effectif
+    // Brief pause to ensure clearing is effective
     std::thread::sleep(std::time::Duration::from_millis(50));
     
-    // Calculer la position pour centrer verticalement
-    let center_x = 8;
-    let center_y = 2;
+    // Calculate centering positions for the victory display
+    let center_x = 8;  // Horizontal offset for main content
+    let center_y = 2;  // Vertical offset from top
     
-    // Créer un cadre pour le message de mission terminée
+    // MAIN VICTORY MESSAGE: Congratulatory text in a decorative box
     let message_lines = vec![
         "╔════════════════════════════════════════════════════════════════════════╗",
         "║                                                                        ║",
@@ -450,25 +613,27 @@ fn show_victory_screen(state: &SimulationState) -> Result<(), Box<dyn std::error
         "║                                                                        ║",
         "║                      🌟 MISSION RÉUSSIE 🌟                           ║",
         "║                                                                        ║",
+        "║                🚀 Fermeture automatique dans 10s...                   ║",
+        "║                                                                        ║",
         "╚════════════════════════════════════════════════════════════════════════╝",
     ];
     
-    // Afficher le message principal
+    // Render the main victory message box
     for (i, line) in message_lines.iter().enumerate() {
         stdout.execute(MoveTo(center_x, center_y + i as u16))?;
         stdout.execute(SetForegroundColor(Color::Yellow))?;
         print!("{}", line);
     }
     
-    // Position pour les statistiques
+    // MISSION STATISTICS SECTION: Detailed performance metrics
     let stats_y = center_y + message_lines.len() as u16 + 2;
     
-    // Titre des statistiques
+    // Statistics section title
     stdout.execute(MoveTo(center_x + 15, stats_y))?;
     stdout.execute(SetForegroundColor(Color::Cyan))?;
     print!("🎯 STATISTIQUES DE LA MISSION");
     
-    // Statistiques détaillées
+    // Individual mission metrics with current values
     stdout.execute(MoveTo(center_x + 5, stats_y + 2))?;
     stdout.execute(SetForegroundColor(Color::Green))?;
     print!("📊 Exoplanète cartographiée à {:.1}%", state.station_data.exploration_percentage);
@@ -488,11 +653,12 @@ fn show_victory_screen(state: &SimulationState) -> Result<(), Box<dyn std::error
     stdout.execute(MoveTo(center_x + 5, stats_y + 7))?;
     print!("🕒 Cycles de simulation: {}", state.iteration);
     
-    // Section robots utilisés
+    // ROBOT TEAM RECOGNITION SECTION: Celebrate the robotic heroes
     stdout.execute(MoveTo(center_x + 5, stats_y + 9))?;
     stdout.execute(SetForegroundColor(Color::White))?;
     print!("🛠️  ÉQUIPE DE ROBOTS HÉROÏQUE:");
     
+    // Display robot type legend with colors
     stdout.execute(MoveTo(center_x + 8, stats_y + 10))?;
     stdout.execute(SetForegroundColor(Color::AnsiValue(9)))?;
     print!("🔍 Explorateurs   ");
@@ -507,33 +673,30 @@ fn show_victory_screen(state: &SimulationState) -> Result<(), Box<dyn std::error
     stdout.execute(SetForegroundColor(Color::Yellow))?;
     print!("- Tous revenus sains et saufs!");
     
-    // Animation des robots héros
+    // ANIMATED ROBOT DISPLAY: Visual representation of the successful team
     stdout.execute(MoveTo(center_x + 25, stats_y + 13))?;
     stdout.execute(SetForegroundColor(Color::AnsiValue(9)))?;
-    print!("🤖 ");
+    print!("🤖 ");   // Explorer
     stdout.execute(SetForegroundColor(Color::AnsiValue(10)))?;
-    print!("🔋 ");
+    print!("🔋 ");   // Energy collector
     stdout.execute(SetForegroundColor(Color::AnsiValue(13)))?;
-    print!("⛏️  ");
+    print!("⛏️  ");   // Mineral collector
     stdout.execute(SetForegroundColor(Color::AnsiValue(12)))?;
-    print!("🧪 ");
+    print!("🧪 ");   // Scientific collector
     stdout.execute(SetForegroundColor(Color::Yellow))?;
-    print!("← NOS HÉROS!");
+    print!("← NOS HÉROS!"); // Hero label
     
-    // Instructions de sortie
+    // USER EXIT INSTRUCTIONS
     stdout.execute(MoveTo(center_x + 20, stats_y + 16))?;
     stdout.execute(SetForegroundColor(Color::Red))?;
     print!("Appuyez sur Ctrl+C pour quitter la mission");
     
-    // Ligne de séparation finale
+    // FINAL DECORATIVE SEPARATOR
     stdout.execute(MoveTo(center_x, stats_y + 18))?;
     stdout.execute(SetForegroundColor(Color::Yellow))?;
     print!("════════════════════════════════════════════════════════════════════════");
     
+    // Ensure all output is immediately visible
     stdout.flush()?;
-    
-    // Attendre indéfiniment que l'utilisateur quitte avec Ctrl+C
-    loop {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
+    Ok(())
 }
