@@ -80,7 +80,7 @@ impl Map {
         x < MAP_SIZE && y < MAP_SIZE && self.tiles[y][x] != TileType::Obstacle
     }
     
-    // Consommer une ressource à une position
+    // Consommer une ressource à une position (ne modifie que les ressources)
     pub fn consume_resource(&mut self, x: usize, y: usize) {
         if x < MAP_SIZE && y < MAP_SIZE {
             match self.tiles[y][x] {
