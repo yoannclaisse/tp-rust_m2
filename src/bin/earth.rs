@@ -107,14 +107,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             
             // Afficher l'écran de victoire et arrêter la boucle
             show_victory_screen(&state)?;
+            
+            // Attendre 10 secondes puis quitter automatiquement
+            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
             break;
         }
         
         // Ajouter des logs basés sur l'état de la simulation
         if state.iteration % 50 == 0 {
-            display_state.add_log(format!("📊 Cycle {} - Exploration: {:.1}%", 
-                                        state.iteration, 
-                                        state.station_data.exploration_percentage));
+            let exploration_pct = state.station_data.exploration_percentage;
+            
+            if exploration_pct < 30.0 {
+                display_state.add_log(format!("🔍 Exploration initiale: {:.1}% - Collecteurs en attente", exploration_pct));
+            } else if exploration_pct < 60.0 {
+                display_state.add_log(format!("⚡ Collecte d'énergie/minerais: {:.1}%", exploration_pct));
+            } else if exploration_pct < 100.0 {
+                display_state.add_log(format!("🧪 Collecte scientifique: {:.1}%", exploration_pct));
+            } else {
+                display_state.add_log("🏁 Exploration terminée - Finalisation en cours".to_string());
+            }
         }
         
         // Vérifier si un nouveau robot a été créé
@@ -450,6 +461,8 @@ fn show_victory_screen(state: &SimulationState) -> Result<(), Box<dyn std::error
         "║                                                                        ║",
         "║                      🌟 MISSION RÉUSSIE 🌟                           ║",
         "║                                                                        ║",
+        "║                🚀 Fermeture automatique dans 10s...                   ║",
+        "║                                                                        ║",
         "╚════════════════════════════════════════════════════════════════════════╝",
     ];
     
@@ -531,9 +544,5 @@ fn show_victory_screen(state: &SimulationState) -> Result<(), Box<dyn std::error
     print!("════════════════════════════════════════════════════════════════════════");
     
     stdout.flush()?;
-    
-    // Attendre indéfiniment que l'utilisateur quitte avec Ctrl+C
-    loop {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
+    Ok(())
 }

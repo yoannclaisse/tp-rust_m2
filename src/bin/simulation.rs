@@ -167,11 +167,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Vérifier si la mission est terminée AVANT de créer de nouveaux robots
                         if station_lock.is_mission_complete(&map_lock) {
                             server_log!("🎉 MISSION TERMINÉE! Toutes les ressources collectées!");
+                            
+                            // Attendre que tous les robots soient revenus à la base
+                            let all_robots_home = robots_lock.iter().all(|r| {
+                                r.x == r.home_station_x && r.y == r.home_station_y && 
+                                (r.mode == RobotMode::Idle || r.mode == RobotMode::ReturnToStation)
+                            });
+                            
+                            if all_robots_home {
+                                server_log!("🏠 Tous les robots sont revenus à la base!");
+                                server_log!("📊 STATISTIQUES FINALES:");
+                                server_log!("   🔋 Énergie collectée: {}", station_lock.energy_reserves);
+                                server_log!("   ⛏️ Minerais collectés: {}", station_lock.collected_minerals);
+                                server_log!("   🧪 Données scientifiques: {}", station_lock.collected_scientific_data);
+                                server_log!("   🌍 Exploration: {:.1}%", station_lock.get_exploration_percentage());
+                                server_log!("   🤖 Robots déployés: {}", robots_lock.len());
+                                
+                                // Diffuser l'état final pendant quelques cycles puis arrêter
+                                static mut FINAL_CYCLES: u32 = 0;
+                                unsafe {
+                                    FINAL_CYCLES += 1;
+                                    if FINAL_CYCLES >= 10 {
+                                        server_log!("🚀 MISSION EREEA TERMINÉE AVEC SUCCÈS!");
+                                        server_log!("🛑 Arrêt automatique de la simulation...");
+                                        std::process::exit(0);
+                                    }
+                                }
+                            }
+                            
                             // Continuer à diffuser l'état final mais ne plus créer de robots
                         } else {
                             // Logique de création de nouveaux robots (tous les 50 cycles)
                             if iteration - last_robot_creation >= 50 {
-                                if let Some(new_robot) = station_lock.try_create_robot(&map_lock) {
+                                // Vérifier si on a besoin de plus d'explorateurs en priorité
+                                let exploration_percentage = station_lock.get_exploration_percentage();
+                                let explorer_count = robots_lock.iter().filter(|r| r.robot_type == RobotType::Explorer).count();
+                                
+                                // Créer plus d'explorateurs si l'exploration est faible et qu'on en a peu
+                                let need_more_explorers = exploration_percentage < 80.0 && explorer_count < 3;
+                                
+                                if let Some(mut new_robot) = station_lock.try_create_robot(&map_lock) {
+                                    // Forcer la création d'un explorateur si nécessaire
+                                    if need_more_explorers {
+                                        new_robot.robot_type = RobotType::Explorer;
+                                        server_log!("🔍 Création prioritaire d'un explorateur pour accélérer la découverte");
+                                    }
+                                    
                                     robots_lock.push(new_robot);
                                     last_robot_creation = iteration;
                                     server_log!("🤖 Nouveau robot déployé! Flotte totale: {} robots", robots_lock.len());

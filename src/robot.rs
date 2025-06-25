@@ -201,6 +201,34 @@ impl Robot {
             }
         }
         
+        // NOUVELLE LOGIQUE: Les collecteurs attendent que l'exploration atteigne un seuil minimum
+        if self.robot_type != RobotType::Explorer {
+            let exploration_percentage = station.get_exploration_percentage();
+            
+            // Les collecteurs attendent au moins 30% d'exploration avant de commencer
+            if exploration_percentage < 30.0 {
+                // Rester à la station en mode Idle
+                if self.x != self.home_station_x || self.y != self.home_station_y {
+                    self.mode = RobotMode::ReturnToStation;
+                    self.plan_path_to_station(map);
+                } else {
+                    self.mode = RobotMode::Idle;
+                }
+                return;
+            }
+            
+            // À 30-60% d'exploration, seuls les collecteurs d'énergie et de minerais travaillent
+            if exploration_percentage < 60.0 && self.robot_type == RobotType::ScientificCollector {
+                if self.x != self.home_station_x || self.y != self.home_station_y {
+                    self.mode = RobotMode::ReturnToStation;
+                    self.plan_path_to_station(map);
+                } else {
+                    self.mode = RobotMode::Idle;
+                }
+                return;
+            }
+        }
+        
         // Vérifier si le robot doit retourner à la station
         if self.should_return_to_station(map) {
             self.mode = RobotMode::ReturnToStation;
@@ -209,16 +237,17 @@ impl Robot {
         
         // Pour les collecteurs, vérifier s'il reste des ressources à collecter
         if self.robot_type != RobotType::Explorer && self.mode == RobotMode::Exploring {
-            // Si aucune ressource de son type n'est disponible, retourner à la station
-            if self.find_nearest_resource(map).is_none() {
-                // S'il n'est pas déjà à la station
+            // Vérifier d'abord si on peut voir des ressources (exploration suffisante)
+            if let Some(_resource_pos) = self.find_nearest_known_resource(map, station) {
+                // Il y a des ressources connues, continuer la collecte
+            } else {
+                // Pas de ressources connues dans les zones explorées
                 if self.x != self.home_station_x || self.y != self.home_station_y {
                     self.mode = RobotMode::ReturnToStation;
                     self.plan_path_to_station(map);
                 } else {
-                    // Si déjà à la station et plus de ressources, passer en mode Idle
                     self.mode = RobotMode::Idle;
-                    println!("🏁 Robot collecteur #{} : Plus de ressources à collecter, passage en mode Idle", self.id);
+                    println!("🏁 Robot collecteur #{} : Aucune ressource connue, passage en mode Idle", self.id);
                 }
             }
         }
@@ -518,6 +547,34 @@ impl Robot {
         }
     }
     
+    // NOUVELLE FONCTION: Trouve la ressource la plus proche dans les zones EXPLORÉES
+    fn find_nearest_known_resource(&self, map: &Map, station: &Station) -> Option<(usize, usize)> {
+        let target_resource = match self.robot_type {
+            RobotType::Explorer => return None,
+            RobotType::EnergyCollector => TileType::Energy,
+            RobotType::MineralCollector => TileType::Mineral,
+            RobotType::ScientificCollector => TileType::Scientific,
+        };
+        
+        let mut nearest = None;
+        let mut min_distance = usize::MAX;
+        
+        for y in 0..MAP_SIZE {
+            for x in 0..MAP_SIZE {
+                // Vérifier que la case est explorée ET contient la ressource recherchée
+                if station.global_memory[y][x].explored && map.get_tile(x, y) == target_resource {
+                    let distance = self.heuristic((self.x, self.y), (x, y));
+                    if distance < min_distance {
+                        min_distance = distance;
+                        nearest = Some((x, y));
+                    }
+                }
+            }
+        }
+        
+        nearest
+    }
+    
     // Collecte de ressources selon le type de robot
     fn collect_resources(&mut self, map: &mut Map) {
         let tile = map.get_tile(self.x, self.y);
@@ -530,15 +587,18 @@ impl Robot {
                         self.energy = self.max_energy;
                     }
                     map.consume_resource(self.x, self.y);
+                    println!("🔋 Robot #{} a collecté de l'énergie à ({}, {})", self.id, self.x, self.y);
                 }
             },
             (RobotType::MineralCollector, TileType::Mineral) => {
                 self.minerals += 1;
                 map.consume_resource(self.x, self.y);
+                println!("⛏️ Robot #{} a collecté un minerai à ({}, {})", self.id, self.x, self.y);
             },
             (RobotType::ScientificCollector, TileType::Scientific) => {
                 self.scientific_data += 1;
                 map.consume_resource(self.x, self.y);
+                println!("🧪 Robot #{} a collecté des données scientifiques à ({}, {})", self.id, self.x, self.y);
             },
             _ => {
                 // Si pas de ressource à collecter, explorer
@@ -589,22 +649,21 @@ impl Robot {
     // Trouver la ressource la plus proche selon le type du robot
     fn find_nearest_resource(&self, map: &Map) -> Option<(usize, usize)> {
         let target_resource = match self.robot_type {
-            RobotType::Explorer => None,  // L'explorateur se concentre sur l'exploration
+            RobotType::Explorer => None,
             RobotType::EnergyCollector => Some(TileType::Energy),
             RobotType::MineralCollector => Some(TileType::Mineral),
             RobotType::ScientificCollector => Some(TileType::Scientific),
         };
         
-        // Si pas de ressource cible, retourner None
         let target_resource = match target_resource {
             Some(res) => res,
             None => return None,
         };
         
-        // Chercher la ressource la plus proche
         let mut nearest = None;
         let mut min_distance = usize::MAX;
         
+        // Chercher dans TOUTE la carte (pour compatibilité avec l'ancien code)
         for y in 0..MAP_SIZE {
             for x in 0..MAP_SIZE {
                 if map.get_tile(x, y) == target_resource {

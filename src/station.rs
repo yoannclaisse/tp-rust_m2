@@ -96,6 +96,13 @@ impl Station {
     
     // Analyse la situation actuelle pour déterminer le type de robot le plus utile
     fn determine_needed_robot_type(&self, map: &Map) -> RobotType {
+        let exploration_percentage = self.get_exploration_percentage();
+        
+        // Phase 1: Exploration prioritaire (0-50%)
+        if exploration_percentage < 50.0 {
+            return RobotType::Explorer;
+        }
+        
         // Compter les ressources restantes sur la carte
         let mut energy_count = 0;
         let mut mineral_count = 0;
@@ -112,24 +119,33 @@ impl Station {
             }
         }
         
-        // Logique de décision basée sur les besoins actuels
-        
-        // Si très peu d'énergie disponible ou réserves faibles -> Collecteur d'énergie
-        if energy_count > 0 && (energy_count <= 3 || self.energy_reserves < 100) {
-            return RobotType::EnergyCollector;
+        // Phase 2: Collecte d'énergie et minerais prioritaire (50-80%)
+        if exploration_percentage < 80.0 {
+            // Prioriser énergie et minerais
+            if energy_count > 0 && (energy_count <= 3 || self.energy_reserves < 100) {
+                return RobotType::EnergyCollector;
+            }
+            if mineral_count > 0 && (mineral_count <= 5 || self.collected_minerals < 30) {
+                return RobotType::MineralCollector;
+            }
+            // Sinon, continuer l'exploration
+            return RobotType::Explorer;
         }
         
-        // Si peu de minerais mais assez d'énergie -> Collecteur de minerais
-        if mineral_count > 0 && (mineral_count <= 5 || self.collected_minerals < 30) {
-            return RobotType::MineralCollector;
-        }
-        
-        // Si points d'intérêt scientifique disponibles et ressources suffisantes
+        // Phase 3: Collecte scientifique (80%+)
         if scientific_count > 0 && self.energy_reserves >= 100 {
             return RobotType::ScientificCollector;
         }
         
-        // Par défaut, créer un explorateur pour découvrir de nouvelles zones
+        // Si plus de ressources scientifiques, prioriser le reste
+        if energy_count > 0 {
+            return RobotType::EnergyCollector;
+        }
+        if mineral_count > 0 {
+            return RobotType::MineralCollector;
+        }
+        
+        // Par défaut, créer un explorateur pour finir l'exploration
         RobotType::Explorer
     }
     
@@ -190,18 +206,32 @@ impl Station {
     
     // Génère un rapport sur l'état actuel de la station
     pub fn get_status(&self) -> String {
-        let status = match (self.energy_reserves, self.collected_minerals) {
-            (e, _m) if e < 30 => "Faible en énergie",
-            (_e, m) if m < 10 => "Faible en minerais", 
-            (e, m) if e >= 200 && m >= 50 => "Ressources abondantes",
-            _ => "Ressources adéquates",
+        let exploration_pct = self.get_exploration_percentage();
+        
+        let status = if exploration_pct >= 100.0 && self.are_all_resources_collected_placeholder() {
+            "🎉 MISSION TERMINÉE!"
+        } else if exploration_pct < 30.0 {
+            "🔍 Phase d'exploration initiale"
+        } else if exploration_pct < 60.0 {
+            "⚡ Collecte d'énergie et minerais"
+        } else if exploration_pct < 100.0 {
+            "🧪 Collecte scientifique en cours"
+        } else {
+            "🏁 Finalisation de la mission"
         };
         
-        format!("{} | Création robot: {}/{} énergie, {}/{} minerai | Conflits: {}", 
-                status, 
-                self.energy_reserves.min(50), 50,      // Progression vers énergie requise
-                self.collected_minerals.min(15), 15,   // Progression vers minerais requis
+        format!("{} | Exploration: {:.1}% | Création robot: {}/{} énergie, {}/{} minerai | Conflits: {}", 
+                status,
+                exploration_pct,
+                self.energy_reserves.min(50), 50,
+                self.collected_minerals.min(15), 15,
                 self.conflict_count)
+    }
+
+    // Fonction temporaire pour éviter les erreurs de compilation
+    fn are_all_resources_collected_placeholder(&self) -> bool {
+        // Cette fonction sera remplacée par le paramètre map dans les appels réels
+        false
     }
     
     // Calcule le pourcentage d'exploration global
