@@ -1,3 +1,23 @@
+//! # Robot AI and Behavior Module
+//! 
+//! This module implements the autonomous robot system for exoplanet exploration.
+//! Each robot is an independent AI agent with specialized capabilities, behavior patterns,
+//! and decision-making algorithms optimized for efficient exploration and resource collection.
+//! 
+//! ## AI Architecture
+//! 
+//! The robot AI uses a hybrid behavior-based architecture combining:
+//! - **Reactive Behaviors**: Immediate responses to environmental conditions
+//! - **Deliberative Planning**: Long-term pathfinding and mission planning
+//! - **Learning Systems**: Exploration memory and experience-based optimization
+//! 
+//! ## Specialization System
+//! 
+//! Different robot types have distinct AI personalities and capabilities:
+//! - **Explorers**: Aggressive exploration with extensive sensor range
+//! - **Collectors**: Resource-focused behavior with efficiency optimization
+//! - **Hybrid Modes**: Dynamic switching between exploration and collection
+
 use crate::types::{MAP_SIZE, TileType, RobotType, RobotMode};
 use crate::map::Map;
 use crate::station::{Station, TerrainData};
@@ -5,18 +25,51 @@ use rand::prelude::*;
 use std::collections::{VecDeque, BinaryHeap, HashMap};
 use std::cmp::Ordering;
 
-// Structure de nœud pour l'algorithme A*
+/// A* pathfinding algorithm node for optimal route calculation.
+/// 
+/// This structure represents a single position in the A* search space,
+/// containing both actual movement cost and heuristic estimates for
+/// efficient pathfinding across the exploration map.
+/// 
+/// # Algorithm Details
+/// 
+/// The A* algorithm uses `f_cost = g_cost + h_cost` where:
+/// - `g_cost`: Actual movement cost from start to this position
+/// - `h_cost`: Heuristic estimate from this position to goal (Manhattan distance)
+/// - `f_cost`: Total estimated cost of path through this position
+/// 
+/// # Examples
+/// 
+/// ```rust
+/// let node = Node {
+///     position: (5, 3),
+///     g_cost: 8,      // 8 steps from start
+///     f_cost: 15,     // 8 + 7 (estimated 7 steps to goal)
+/// };
+/// ```
 #[derive(Clone, Eq, PartialEq)]
 struct Node {
+    /// Coordinates (x, y) of this node on the exploration map
     position: (usize, usize),
-    g_cost: usize,  // Coût depuis le départ
-    f_cost: usize,  // Coût total estimé (g_cost + heuristique)
+    
+    /// Actual movement cost from the pathfinding start position to this node
+    /// Represents the confirmed minimum cost to reach this position
+    g_cost: usize,
+    
+    /// Total estimated cost (g_cost + heuristic) for a path through this node
+    /// Used by A* algorithm to prioritize exploration of promising nodes
+    f_cost: usize,
 }
 
-// Implémentation pour le tri dans la file de priorité
+// Implementation for priority queue ordering in A* algorithm
+// Rust's BinaryHeap is a max-heap, but A* needs a min-heap (lowest f_cost first)
 impl Ord for Node {
+    /// Compares nodes by f_cost for priority queue ordering.
+    /// 
+    /// Returns reverse ordering to convert BinaryHeap max-heap into min-heap behavior.
+    /// Lower f_cost values will be processed first by the A* algorithm.
     fn cmp(&self, other: &Self) -> Ordering {
-        // On inverse pour avoir une min-heap au lieu d'une max-heap
+        // Reverse comparison: other.cmp(self) creates min-heap from max-heap
         other.f_cost.cmp(&self.f_cost)
     }
 }
@@ -27,43 +80,187 @@ impl PartialOrd for Node {
     }
 }
 
+/// Autonomous exploration robot with specialized AI behavior and capabilities.
+/// 
+/// Each robot is an independent agent capable of exploration, resource collection,
+/// pathfinding, and coordination with the central station. The robot's behavior
+/// is determined by its specialization type and current operational mode.
+/// 
+/// # AI Behavior System
+/// 
+/// The robot AI operates through a state machine with the following modes:
+/// - **Exploring**: Actively seeks unexplored map areas using intelligent search
+/// - **Collecting**: Focuses on gathering resources matching robot specialization  
+/// - **ReturnToStation**: Navigates back to base for resupply and data synchronization
+/// - **Idle**: Standby mode while awaiting new missions or resource availability
+/// 
+/// # Memory System
+/// 
+/// Each robot maintains local exploration memory that is periodically synchronized
+/// with the central station. This enables:
+/// - Independent operation during communication blackouts
+/// - Conflict detection and resolution for overlapping exploration
+/// - Distributed knowledge sharing across the robot fleet
+/// 
+/// # Examples
+/// 
+/// ```rust
+/// use ereea::robot::Robot;
+/// use ereea::types::RobotType;
+/// 
+/// // Create a specialized exploration robot
+/// let mut explorer = Robot::new(10, 10, RobotType::Explorer);
+/// assert_eq!(explorer.robot_type, RobotType::Explorer);
+/// assert_eq!(explorer.energy, 80.0); // Explorer energy capacity
+/// 
+/// // Robot can move and update its state
+/// explorer.update(&mut map, &mut station);
+/// ```
 pub struct Robot {
+    /// Current X coordinate position on the exploration map (0 to MAP_SIZE-1)
     pub x: usize,
+    
+    /// Current Y coordinate position on the exploration map (0 to MAP_SIZE-1)  
     pub y: usize,
+    
+    /// Current energy level (0.0 = completely depleted, max_energy = fully charged)
+    /// 
+    /// Energy is consumed by:
+    /// - Movement (varies by robot type and distance)
+    /// - Sensor operations and environmental scanning
+    /// - Resource collection and processing activities
+    /// - Communication with other robots and station
     pub energy: f32,
+    
+    /// Maximum energy capacity for this robot type
+    /// 
+    /// Different robot types have varying energy capacities:
+    /// - Explorer: 80.0 (balanced for extended exploration)
+    /// - EnergyCollector: 120.0 (high capacity for long missions)
+    /// - MineralCollector: 100.0 (good endurance for mining operations)
+    /// - ScientificCollector: 60.0 (limited by instrument power requirements)
     pub max_energy: f32,
+    
+    /// Number of mineral units currently carried by the robot
+    /// 
+    /// Only MineralCollector robots can carry minerals. Storage capacity
+    /// is limited and affects movement speed when heavily loaded.
+    /// Minerals must be deposited at the station before collection can continue.
     pub minerals: u32,
+    
+    /// Number of scientific data units currently stored by the robot
+    /// 
+    /// Only ScientificCollector robots can gather scientific data.
+    /// Data represents analyzed samples, readings, and observations
+    /// that contribute to mission scientific objectives.
     pub scientific_data: u32,
+    
+    /// Specialization category determining robot capabilities and behavior patterns
+    /// 
+    /// This field affects:
+    /// - Available actions and resource collection abilities
+    /// - Energy capacity and consumption rates  
+    /// - AI behavior patterns and decision algorithms
+    /// - Visual representation in user interfaces
     pub robot_type: RobotType,
+    
+    /// Current operational mode controlling robot behavior and decision-making
+    /// 
+    /// The mode determines which AI algorithms are active and how the robot
+    /// responds to environmental conditions and mission objectives.
+    /// Modes can change automatically based on energy, inventory, and mission status.
     pub mode: RobotMode,
-    pub memory: Vec<Vec<TerrainData>>, // Mémoire du robot avec timestamps
-    pub path_to_station: VecDeque<(usize, usize)>, // Chemin vers la destination
-    pub id: usize,                     // Identifiant unique du robot
-    pub home_station_x: usize,         // Coordonnées X de la station d'origine
-    pub home_station_y: usize,         // Coordonnées Y de la station d'origine
-    pub last_sync_time: u32,           // Dernière synchronisation avec la station
-    pub exploration_complete_announced: bool, // Flag pour éviter de répéter le message
+    
+    /// Local exploration memory containing discovered map information
+    /// 
+    /// Each robot maintains its own exploration memory that may differ from
+    /// other robots and the central station. Memory is synchronized during
+    /// station visits, enabling conflict detection and knowledge sharing.
+    /// 
+    /// Structure: `memory[y][x]` corresponds to map position (x, y)
+    pub memory: Vec<Vec<TerrainData>>,
+    
+    /// Planned movement path as a sequence of coordinate waypoints
+    /// 
+    /// Generated by A* pathfinding algorithm for optimal navigation to
+    /// target destinations. The robot follows this path step-by-step,
+    /// consuming waypoints as it moves. Empty when no planned movement.
+    pub path_to_station: VecDeque<(usize, usize)>,
+    
+    /// Unique identifier for this robot across the entire mission
+    /// 
+    /// Robot IDs are assigned sequentially by the station and used for:
+    /// - Tracking individual robot performance and contributions
+    /// - Conflict resolution in exploration memory synchronization
+    /// - User interface display and mission reporting
+    pub id: usize,
+    
+    /// X coordinate of the robot's home station for return navigation
+    pub home_station_x: usize,
+    
+    /// Y coordinate of the robot's home station for return navigation  
+    pub home_station_y: usize,
+    
+    /// Timestamp of the robot's last data synchronization with the station
+    /// 
+    /// Used to prevent redundant synchronization operations and optimize
+    /// communication efficiency. Updated whenever the robot exchanges
+    /// exploration data with the central station memory.
+    pub last_sync_time: u32,
+    
+    /// Flag preventing duplicate exploration completion announcements
+    /// 
+    /// Set to true when the robot has announced completion of its exploration
+    /// objectives. Prevents spamming the mission log with repeated messages
+    /// about the same achievement.
+    pub exploration_complete_announced: bool,
 }
 
 impl Robot {
+    /// Creates a new robot with default configuration at the specified position.
+    /// 
+    /// This constructor initializes a robot with type-appropriate energy capacity
+    /// and creates empty exploration memory. The robot starts in Exploring mode
+    /// and is ready for immediate deployment.
+    /// 
+    /// # Parameters
+    /// 
+    /// * `x` - Initial X coordinate position on the map
+    /// * `y` - Initial Y coordinate position on the map  
+    /// * `robot_type` - Specialization determining capabilities and behavior
+    /// 
+    /// # Returns
+    /// 
+    /// Newly created Robot instance ready for mission deployment
+    /// 
+    /// # Examples
+    /// 
+    /// ```rust
+    /// let explorer = Robot::new(5, 7, RobotType::Explorer);
+    /// assert_eq!(explorer.x, 5);
+    /// assert_eq!(explorer.y, 7);
+    /// assert_eq!(explorer.mode, RobotMode::Exploring);
+    /// ```
     pub fn new(x: usize, y: usize, robot_type: RobotType) -> Self {
-        // Paramètres différents selon le type de robot
+        // Configure energy capacity based on robot specialization
+        // Different types have different energy profiles optimized for their roles
         let (max_energy, energy) = match robot_type {
-            RobotType::Explorer => (80.0, 80.0),           // Explorateur: endurance moyenne
-            RobotType::EnergyCollector => (120.0, 120.0),  // Collecteur d'énergie: grande capacité
-            RobotType::MineralCollector => (100.0, 100.0), // Collecteur de minerais: bonne endurance
-            RobotType::ScientificCollector => (60.0, 60.0), // Collecteur scientifique: faible endurance
+            RobotType::Explorer => (80.0, 80.0),           // Balanced capacity for exploration
+            RobotType::EnergyCollector => (120.0, 120.0),  // High capacity for extended missions
+            RobotType::MineralCollector => (100.0, 100.0), // Good endurance for mining work
+            RobotType::ScientificCollector => (60.0, 60.0), // Limited by instrument power needs
         };
         
-        // Initialiser une mémoire vide
+        // Initialize empty exploration memory grid
+        // All tiles start as unexplored from this robot's perspective
         let mut memory = Vec::with_capacity(MAP_SIZE);
         for _ in 0..MAP_SIZE {
             let row = vec![
                 TerrainData {
-                    explored: false,
-                    timestamp: 0,
-                    robot_id: 0,
-                    robot_type: RobotType::Explorer,
+                    explored: false,                    // No tiles explored yet
+                    timestamp: 0,                       // No exploration time recorded
+                    robot_id: 0,                        // Placeholder robot ID
+                    robot_type: RobotType::Explorer,    // Default type for unexplored tiles
                 }; 
                 MAP_SIZE
             ];
@@ -75,17 +272,17 @@ impl Robot {
             y,
             energy,
             max_energy,
-            minerals: 0,
-            scientific_data: 0,
+            minerals: 0,                            // Start with empty mineral storage
+            scientific_data: 0,                     // Start with no scientific data
             robot_type,
-            mode: RobotMode::Exploring, // Commencer directement en mode exploration
+            mode: RobotMode::Exploring,             // Begin mission in exploration mode
             memory,
-            path_to_station: VecDeque::new(),
-            id: 0, // Sera défini par la station
-            home_station_x: x,
+            path_to_station: VecDeque::new(),       // No planned path initially
+            id: 0,                                  // ID will be assigned by station
+            home_station_x: x,                      // Remember starting position as home
             home_station_y: y,
-            last_sync_time: 0,
-            exploration_complete_announced: false,
+            last_sync_time: 0,                      // No synchronization performed yet
+            exploration_complete_announced: false,  // Haven't announced completion
         }
     }
     
