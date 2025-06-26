@@ -273,6 +273,25 @@ pub struct StationData {
     pub mission_complete: bool,
 }
 
+/// Network-serializable representation of explored tiles.
+/// Used to transmit which tiles have been explored by the station.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ExplorationData {
+    /// 2D grid: true if tile has been explored, false otherwise.
+    pub explored_tiles: Vec<Vec<bool>>,
+}
+
+/// Complete simulation state for network transmission.
+/// Bundles all relevant data for a single simulation tick.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SimulationState {
+    pub map_data: MapData,
+    pub robots_data: Vec<RobotData>,
+    pub station_data: StationData,
+    pub exploration_data: ExplorationData,
+    pub iteration: u32,
+}
+
 /// Global network configuration constants for reliable communication.
 /// 
 /// These constants define the communication parameters used throughout
