@@ -26,10 +26,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // === PHASE 1: INITIALISATION DES COMPOSANTS ===
     
+    // NOTE - Generating the exoplanet map
     server_log!("📍 Étape 1: Génération de l'exoplanète...");
     let map = Arc::new(Mutex::new(Map::new()));
     
-    // Debug: Afficher quelques informations sur la carte générée
+    // NOTE - Counting resources on the generated map
     {
         let map_lock = map.lock().unwrap();
         let mut resource_count = 0;
@@ -45,11 +46,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                  resource_count, map_lock.station_x, map_lock.station_y);
     }
     
+    // NOTE - Building the space station
     server_log!("🏗️  Étape 2: Construction de la station spatiale...");
     let station = Arc::new(Mutex::new(Station::new()));
     server_log!("✅ Station spatiale opérationnelle.");
     
-    // Extraction des coordonnées pour éviter les verrous multiples
+    // NOTE - Extracting coordinates for robots
     server_log!("📋 Étape 3: Configuration des robots initiaux...");
     let (station_x, station_y, global_memory_clone) = {
         let map_lock = map.lock().unwrap();
@@ -62,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
     };
     
-    // Création de l'équipe de robots initiale
+    // NOTE - Creating the initial robot team
     let robots = Arc::new(Mutex::new(vec![
         Robot::new_with_memory(
             station_x, station_y, 
@@ -90,10 +92,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     ]));
     
-    // Configuration de l'ID du prochain robot
+    // NOTE - Setting next robot ID
     station.lock().unwrap().next_robot_id = 5;
     
-    // Activation des robots
+    // NOTE - Activating robots
     for robot in robots.lock().unwrap().iter_mut() {
         robot.mode = RobotMode::Exploring;
     }
@@ -101,28 +103,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // === PHASE 2: CONFIGURATION DU SYSTÈME DE COMMUNICATION ===
     
+    // NOTE - Setting up communication channel for simulation state
     server_log!("📡 Étape 4: Configuration du système de communication...");
-    // Canal pour diffuser l'état de simulation aux clients connectés
     let (state_tx, mut state_rx) = mpsc::channel::<SimulationState>(100);
     server_log!("✅ Canal de communication configuré.");
     
     // === PHASE 3: DÉMARRAGE DU THREAD DE SIMULATION ===
     
+    // NOTE - Spawning simulation engine thread
     server_log!("⚙️  Étape 5: Démarrage du moteur de simulation...");
     let map_for_sim = map.clone();
     let station_for_sim = station.clone();
     let robots_for_sim = robots.clone();
     
-    // Thread principal de simulation (logique métier)
+    // NOTE - Main simulation loop
     let _simulation_thread = thread::spawn(move || {
         server_log!("🔄 Moteur de simulation actif.");
         let mut iteration = 0;
         let mut last_robot_creation = 0;
         let mut last_status_log = 0;
         
-        // Boucle principale de simulation
+        // NOTE - Simulation main loop
         loop {
-            // Log de progression moins fréquent (toutes les 100 itérations)
+            // NOTE - Periodic progress log
             if iteration % 100 == 0 && iteration != last_status_log {
                 let exploration_pct = if let Ok(station_lock) = station_for_sim.lock() {
                     station_lock.get_exploration_percentage()
@@ -133,7 +136,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 last_status_log = iteration;
             }
             
-            // Incrément de l'horloge globale
+            // NOTE - Advance global clock
             if let Ok(mut station_lock) = station_for_sim.lock() {
                 station_lock.tick();
             } else {
@@ -141,20 +144,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 break;
             }
             
-            // Mise à jour de tous les robots
+            // NOTE - Update all robots and handle emergencies
             {
                 let robots_result = robots_for_sim.lock();
                 let map_result = map_for_sim.lock();
                 let station_result = station_for_sim.lock();
                 
-                // Traitement atomique avec tous les verrous
+                // NOTE - Atomic processing with all locks
                 match (robots_result, map_result, station_result) {
                     (Ok(mut robots_lock), Ok(mut map_lock), Ok(mut station_lock)) => {
-                        // Mise à jour de chaque robot
+                        // NOTE - Update each robot
                         for robot in robots_lock.iter_mut() {
                             robot.update(&mut map_lock, &mut station_lock);
                             
-                            // Gestion d'urgence: robot en panne d'énergie
+                            // NOTE - Emergency: robot out of energy
                             if robot.energy <= 0.0 {
                                 server_log!("🚨 URGENCE: Robot {} en panne d'énergie, rapatriement!", robot.id);
                                 robot.x = robot.home_station_x;
@@ -164,11 +167,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                         
-                        // Vérifier si la mission est terminée AVANT de créer de nouveaux robots
+                        // NOTE - Check if mission is complete BEFORE creating new robots
                         if station_lock.is_mission_complete(&map_lock) {
                             server_log!("🎉 MISSION TERMINÉE! Toutes les ressources collectées!");
                             
-                            // Attendre que tous les robots soient revenus à la base
+                            // NOTE - Wait for all robots to return to base
                             let all_robots_home = robots_lock.iter().all(|r| {
                                 r.x == r.home_station_x && r.y == r.home_station_y && 
                                 (r.mode == RobotMode::Idle || r.mode == RobotMode::ReturnToStation)
@@ -183,7 +186,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 server_log!("   🌍 Exploration: {:.1}%", station_lock.get_exploration_percentage());
                                 server_log!("   🤖 Robots déployés: {}", robots_lock.len());
                                 
-                                // Diffuser l'état final pendant quelques cycles puis arrêter
+                                // NOTE - Broadcast final state for a few cycles then exit
                                 static mut FINAL_CYCLES: u32 = 0;
                                 unsafe {
                                     FINAL_CYCLES += 1;
@@ -195,19 +198,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             
-                            // Continuer à diffuser l'état final mais ne plus créer de robots
+                            // NOTE - Continue broadcasting final state, no more robot creation
                         } else {
-                            // Logique de création de nouveaux robots (tous les 50 cycles)
+                            // NOTE - Robot creation logic (every 50 cycles)
                             if iteration - last_robot_creation >= 50 {
-                                // Vérifier si on a besoin de plus d'explorateurs en priorité
+                                // NOTE - Check if more explorers are needed
                                 let exploration_percentage = station_lock.get_exploration_percentage();
                                 let explorer_count = robots_lock.iter().filter(|r| r.robot_type == RobotType::Explorer).count();
                                 
-                                // Créer plus d'explorateurs si l'exploration est faible et qu'on en a peu
+                                // NOTE - Create more explorers if exploration is low and few explorers exist
                                 let need_more_explorers = exploration_percentage < 80.0 && explorer_count < 3;
                                 
                                 if let Some(mut new_robot) = station_lock.try_create_robot(&map_lock) {
-                                    // Forcer la création d'un explorateur si nécessaire
+                                    // NOTE - Force explorer creation if needed
                                     if need_more_explorers {
                                         new_robot.robot_type = RobotType::Explorer;
                                         server_log!("🔍 Création prioritaire d'un explorateur pour accélérer la découverte");
@@ -227,7 +230,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             
-            // Création et diffusion de l'état de simulation
+            // NOTE - Create and broadcast simulation state
             let state_result = {
                 match (map_for_sim.lock(), station_for_sim.lock(), robots_for_sim.lock()) {
                     (Ok(map_lock), Ok(station_lock), Ok(robots_lock)) => {
@@ -240,17 +243,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             };
             
-            // Diffusion de l'état aux clients connectés
+            // NOTE - Broadcast state to connected clients
             if let Ok(state) = state_result {
                 if let Err(_) = state_tx.blocking_send(state) {
-                    // Ne pas logger à chaque fois qu'il n'y a pas de clients
                     if iteration % 1000 == 0 {
                         server_log!("⚠️  Aucun client connecté pour recevoir les données");
                     }
                 }
             }
             
-            // Pause entre les cycles de simulation
+            // NOTE - Simulation cycle pause
             thread::sleep(Duration::from_millis(300));
             iteration += 1;
         }
@@ -262,6 +264,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // === PHASE 4: CONFIGURATION DU SERVEUR RÉSEAU ===
     
+    // NOTE - Opening TCP listener for Earth connections
     server_log!("🌐 Étape 6: Ouverture des communications avec la Terre...");
     let listener = match TcpListener::bind(format!("127.0.0.1:{}", DEFAULT_PORT)).await {
         Ok(l) => {
@@ -280,20 +283,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // === PHASE 5: GESTION DES CONNEXIONS CLIENTES ===
     
+    // NOTE - Initializing client connection storage
     server_log!("📺 Étape 7: Initialisation du système de diffusion...");
-    // Stockage thread-safe des connexions clients
     let client_streams = Arc::new(TokioMutex::new(Vec::<TcpStream>::new()));
     let client_streams_clone = client_streams.clone();
     server_log!("✅ Système de diffusion initialisé.");
     
-    // Tâche asynchrone pour diffuser l'état aux clients connectés
+    // NOTE - Spawning async task for broadcasting simulation state
     server_log!("📤 Étape 8: Activation de la diffusion de données...");
     tokio::spawn(async move {
         server_log!("📤 Diffuseur de données activé.");
         
-        // Boucle de diffusion
+        // NOTE - Main broadcast loop
         while let Some(state) = state_rx.recv().await {
-            // Sérialisation de l'état en JSON pour transmission
+            // NOTE - Serialize simulation state to JSON
             let state_json = match serde_json::to_string(&state) {
                 Ok(json) => json,
                 Err(e) => {
@@ -302,24 +305,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             };
             
-            // Diffusion à tous les clients connectés
+            // NOTE - Broadcast to all connected clients
             let mut disconnected_indices = Vec::new();
             let mut streams = client_streams_clone.lock().await;
             
-            // Envoi des données à chaque client
             for (i, stream) in streams.iter_mut().enumerate() {
-                // Envoi du JSON
                 if let Err(_) = stream.write_all(state_json.as_bytes()).await {
                     disconnected_indices.push(i);
                 } else {
-                    // Envoi du délimiteur de fin de message
                     if let Err(_) = stream.write_all(b"\n").await {
                         disconnected_indices.push(i);
                     }
                 }
             }
             
-            // Nettoyage des connexions fermées
+            // NOTE - Clean up closed connections
             for i in disconnected_indices.iter().rev() {
                 server_log!("📡 Connexion Terre #{} fermée", i);
                 streams.remove(*i);
@@ -335,13 +335,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     server_log!("🚀 EREEA opérationnel! En attente de connexions de la Terre...");
     
-    // Boucle principale d'acceptation des connexions
+    // NOTE - Main loop for accepting new client connections
     loop {
         match listener.accept().await {
             Ok((stream, addr)) => {
                 server_log!("🌍 Nouvelle connexion depuis la Terre: {}", addr);
                 
-                // Ajouter le nouveau client à la liste de diffusion
+                // NOTE - Add new client to broadcast list
                 let mut streams = client_streams.lock().await;
                 streams.push(stream);
                 server_log!("📊 Clients connectés: {}", streams.len());

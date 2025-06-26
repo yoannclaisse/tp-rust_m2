@@ -25,51 +25,21 @@ use rand::prelude::*;
 use std::collections::{VecDeque, BinaryHeap, HashMap};
 use std::cmp::Ordering;
 
-/// A* pathfinding algorithm node for optimal route calculation.
-/// 
-/// This structure represents a single position in the A* search space,
-/// containing both actual movement cost and heuristic estimates for
-/// efficient pathfinding across the exploration map.
-/// 
-/// # Algorithm Details
-/// 
-/// The A* algorithm uses `f_cost = g_cost + h_cost` where:
-/// - `g_cost`: Actual movement cost from start to this position
-/// - `h_cost`: Heuristic estimate from this position to goal (Manhattan distance)
-/// - `f_cost`: Total estimated cost of path through this position
-/// 
-/// # Examples
-/// 
-/// ```rust
-/// let node = Node {
-///     position: (5, 3),
-///     g_cost: 8,      // 8 steps from start
-///     f_cost: 15,     // 8 + 7 (estimated 7 steps to goal)
-/// };
-/// ```
+// NOTE - Node structure for A* pathfinding algorithm
 #[derive(Clone, Eq, PartialEq)]
 struct Node {
-    /// Coordinates (x, y) of this node on the exploration map
+    // NOTE - Node position on the map
     position: (usize, usize),
-    
-    /// Actual movement cost from the pathfinding start position to this node
-    /// Represents the confirmed minimum cost to reach this position
+    // NOTE - Cost from start to this node
     g_cost: usize,
-    
-    /// Total estimated cost (g_cost + heuristic) for a path through this node
-    /// Used by A* algorithm to prioritize exploration of promising nodes
+    // NOTE - Estimated total cost (g_cost + heuristic)
     f_cost: usize,
 }
 
-// Implementation for priority queue ordering in A* algorithm
-// Rust's BinaryHeap is a max-heap, but A* needs a min-heap (lowest f_cost first)
+// NOTE - Implement ordering for priority queue (min-heap for A*)
 impl Ord for Node {
-    /// Compares nodes by f_cost for priority queue ordering.
-    /// 
-    /// Returns reverse ordering to convert BinaryHeap max-heap into min-heap behavior.
-    /// Lower f_cost values will be processed first by the A* algorithm.
     fn cmp(&self, other: &Self) -> Ordering {
-        // Reverse comparison: other.cmp(self) creates min-heap from max-heap
+        // NOTE - Reverse order for min-heap
         other.f_cost.cmp(&self.f_cost)
     }
 }
@@ -80,170 +50,44 @@ impl PartialOrd for Node {
     }
 }
 
-/// Autonomous exploration robot with specialized AI behavior and capabilities.
-/// 
-/// Each robot is an independent agent capable of exploration, resource collection,
-/// pathfinding, and coordination with the central station. The robot's behavior
-/// is determined by its specialization type and current operational mode.
-/// 
-/// # AI Behavior System
-/// 
-/// The robot AI operates through a state machine with the following modes:
-/// - **Exploring**: Actively seeks unexplored map areas using intelligent search
-/// - **Collecting**: Focuses on gathering resources matching robot specialization  
-/// - **ReturnToStation**: Navigates back to base for resupply and data synchronization
-/// - **Idle**: Standby mode while awaiting new missions or resource availability
-/// 
-/// # Memory System
-/// 
-/// Each robot maintains local exploration memory that is periodically synchronized
-/// with the central station. This enables:
-/// - Independent operation during communication blackouts
-/// - Conflict detection and resolution for overlapping exploration
-/// - Distributed knowledge sharing across the robot fleet
-/// 
-/// # Examples
-/// 
-/// ```rust
-/// use ereea::robot::Robot;
-/// use ereea::types::RobotType;
-/// 
-/// // Create a specialized exploration robot
-/// let mut explorer = Robot::new(10, 10, RobotType::Explorer);
-/// assert_eq!(explorer.robot_type, RobotType::Explorer);
-/// assert_eq!(explorer.energy, 80.0); // Explorer energy capacity
-/// 
-/// // Robot can move and update its state
-/// explorer.update(&mut map, &mut station);
-/// ```
+// NOTE - Main robot structure with all mission state
 pub struct Robot {
-    /// Current X coordinate position on the exploration map (0 to MAP_SIZE-1)
+    // NOTE - Current X position on the map
     pub x: usize,
-    
-    /// Current Y coordinate position on the exploration map (0 to MAP_SIZE-1)  
+    // NOTE - Current Y position on the map
     pub y: usize,
-    
-    /// Current energy level (0.0 = completely depleted, max_energy = fully charged)
-    /// 
-    /// Energy is consumed by:
-    /// - Movement (varies by robot type and distance)
-    /// - Sensor operations and environmental scanning
-    /// - Resource collection and processing activities
-    /// - Communication with other robots and station
+    // NOTE - Current energy level
     pub energy: f32,
-    
-    /// Maximum energy capacity for this robot type
-    /// 
-    /// Different robot types have varying energy capacities:
-    /// - Explorer: 80.0 (balanced for extended exploration)
-    /// - EnergyCollector: 120.0 (high capacity for long missions)
-    /// - MineralCollector: 100.0 (good endurance for mining operations)
-    /// - ScientificCollector: 60.0 (limited by instrument power requirements)
+    // NOTE - Maximum energy capacity
     pub max_energy: f32,
-    
-    /// Number of mineral units currently carried by the robot
-    /// 
-    /// Only MineralCollector robots can carry minerals. Storage capacity
-    /// is limited and affects movement speed when heavily loaded.
-    /// Minerals must be deposited at the station before collection can continue.
+    // NOTE - Minerals carried (for MineralCollector)
     pub minerals: u32,
-    
-    /// Number of scientific data units currently stored by the robot
-    /// 
-    /// Only ScientificCollector robots can gather scientific data.
-    /// Data represents analyzed samples, readings, and observations
-    /// that contribute to mission scientific objectives.
+    // NOTE - Scientific data carried (for ScientificCollector)
     pub scientific_data: u32,
-    
-    /// Specialization category determining robot capabilities and behavior patterns
-    /// 
-    /// This field affects:
-    /// - Available actions and resource collection abilities
-    /// - Energy capacity and consumption rates  
-    /// - AI behavior patterns and decision algorithms
-    /// - Visual representation in user interfaces
+    // NOTE - Robot specialization type
     pub robot_type: RobotType,
-    
-    /// Current operational mode controlling robot behavior and decision-making
-    /// 
-    /// The mode determines which AI algorithms are active and how the robot
-    /// responds to environmental conditions and mission objectives.
-    /// Modes can change automatically based on energy, inventory, and mission status.
+    // NOTE - Current operational mode
     pub mode: RobotMode,
-    
-    /// Local exploration memory containing discovered map information
-    /// 
-    /// Each robot maintains its own exploration memory that may differ from
-    /// other robots and the central station. Memory is synchronized during
-    /// station visits, enabling conflict detection and knowledge sharing.
-    /// 
-    /// Structure: `memory[y][x]` corresponds to map position (x, y)
+    // NOTE - Local exploration memory (per robot)
     pub memory: Vec<Vec<TerrainData>>,
-    
-    /// Planned movement path as a sequence of coordinate waypoints
-    /// 
-    /// Generated by A* pathfinding algorithm for optimal navigation to
-    /// target destinations. The robot follows this path step-by-step,
-    /// consuming waypoints as it moves. Empty when no planned movement.
+    // NOTE - Planned path to station (A* waypoints)
     pub path_to_station: VecDeque<(usize, usize)>,
-    
-    /// Unique identifier for this robot across the entire mission
-    /// 
-    /// Robot IDs are assigned sequentially by the station and used for:
-    /// - Tracking individual robot performance and contributions
-    /// - Conflict resolution in exploration memory synchronization
-    /// - User interface display and mission reporting
+    // NOTE - Unique robot identifier
     pub id: usize,
-    
-    /// X coordinate of the robot's home station for return navigation
+    // NOTE - Home station X coordinate
     pub home_station_x: usize,
-    
-    /// Y coordinate of the robot's home station for return navigation  
+    // NOTE - Home station Y coordinate
     pub home_station_y: usize,
-    
-    /// Timestamp of the robot's last data synchronization with the station
-    /// 
-    /// Used to prevent redundant synchronization operations and optimize
-    /// communication efficiency. Updated whenever the robot exchanges
-    /// exploration data with the central station memory.
+    // NOTE - Last time data was synchronized with station
     pub last_sync_time: u32,
-    
-    /// Flag preventing duplicate exploration completion announcements
-    /// 
-    /// Set to true when the robot has announced completion of its exploration
-    /// objectives. Prevents spamming the mission log with repeated messages
-    /// about the same achievement.
+    // NOTE - Prevents duplicate exploration completion logs
     pub exploration_complete_announced: bool,
 }
 
 impl Robot {
-    /// Creates a new robot with default configuration at the specified position.
-    /// 
-    /// This constructor initializes a robot with type-appropriate energy capacity
-    /// and creates empty exploration memory. The robot starts in Exploring mode
-    /// and is ready for immediate deployment.
-    /// 
-    /// # Parameters
-    /// 
-    /// * `x` - Initial X coordinate position on the map
-    /// * `y` - Initial Y coordinate position on the map  
-    /// * `robot_type` - Specialization determining capabilities and behavior
-    /// 
-    /// # Returns
-    /// 
-    /// Newly created Robot instance ready for mission deployment
-    /// 
-    /// # Examples
-    /// 
-    /// ```rust
-    /// let explorer = Robot::new(5, 7, RobotType::Explorer);
-    /// assert_eq!(explorer.x, 5);
-    /// assert_eq!(explorer.y, 7);
-    /// assert_eq!(explorer.mode, RobotMode::Exploring);
-    /// ```
+    /// NOTE - Create a new robot with default configuration
     pub fn new(x: usize, y: usize, robot_type: RobotType) -> Self {
-        // Configure energy capacity based on robot specialization
-        // Different types have different energy profiles optimized for their roles
+        // NOTE - Set energy based on robot type
         let (max_energy, energy) = match robot_type {
             RobotType::Explorer => (80.0, 80.0),           // Balanced capacity for exploration
             RobotType::EnergyCollector => (120.0, 120.0),  // High capacity for extended missions
@@ -251,8 +95,7 @@ impl Robot {
             RobotType::ScientificCollector => (60.0, 60.0), // Limited by instrument power needs
         };
         
-        // Initialize empty exploration memory grid
-        // All tiles start as unexplored from this robot's perspective
+        // NOTE - Initialize empty exploration memory
         let mut memory = Vec::with_capacity(MAP_SIZE);
         for _ in 0..MAP_SIZE {
             let row = vec![
@@ -286,7 +129,7 @@ impl Robot {
         }
     }
     
-    // Constructeur avec mémoire préchargée (pour la création par la station)
+    // NOTE - Create robot with preloaded memory (for station deployment)
     pub fn new_with_memory(
         x: usize, 
         y: usize, 
@@ -322,7 +165,7 @@ impl Robot {
         }
     }
     
-    // Caractère pour affichage selon le type de robot
+    // NOTE - Get display character for robot type (for UI)
     pub fn get_display_char(&self) -> &str {
         match self.robot_type {
             RobotType::Explorer => "🤖",
@@ -332,7 +175,7 @@ impl Robot {
         }
     }
     
-    // Couleur selon le type de robot
+    // NOTE - Get display color for robot type (for UI)
     pub fn get_display_color(&self) -> u8 {
         match self.robot_type {
             RobotType::Explorer => 9,          // Rouge vif
@@ -342,10 +185,10 @@ impl Robot {
         }
     }
     
-    // Mise à jour de la mémoire (exploration) - VERSION AMÉLIORÉE
+    // NOTE - Update robot's local exploration memory (improved version)
     pub fn update_memory(&mut self, map: &Map, station: &Station) {
         let _ = map;
-        // Marquer la case actuelle comme explorée avec timestamp
+        // NOTE - Mark current tile as explored with timestamp
         self.memory[self.y][self.x] = TerrainData {
             explored: true,
             timestamp: station.current_time,
@@ -353,7 +196,7 @@ impl Robot {
             robot_type: self.robot_type,
         };
         
-        // L'explorateur a une vision encore plus étendue pour détecter les cases "?"
+        // NOTE - Set vision range based on robot type
         let vision_range = match self.robot_type {
             RobotType::Explorer => 4, // Vision étendue pour l'explorateur
             _ => 2,                   // Vision standard pour les autres
@@ -384,12 +227,12 @@ impl Robot {
         }
     }
     
-    // Méthode principale de mise à jour
+    // NOTE - Main update method for robot behavior
     pub fn update(&mut self, map: &mut Map, station: &mut Station) {
-        // Consommer de l'énergie (métabolisme de base)
+        // NOTE - Consume base metabolism energy
         self.energy -= 0.1;
         
-        // Vérifier si l'exploration est terminée (pour les explorateurs uniquement)
+        // NOTE - Check if exploration is complete (explorers only)
         if self.robot_type == RobotType::Explorer {
             if self.is_exploration_complete() && !self.exploration_complete_announced {
                 println!("🌍 EXPLORATION DE L'EXOPLANÈTE TERMINÉE ! 🌍");
@@ -426,13 +269,13 @@ impl Robot {
             }
         }
         
-        // Vérifier si le robot doit retourner à la station
+        // NOTE - Check if robot should return to station
         if self.should_return_to_station(map) {
             self.mode = RobotMode::ReturnToStation;
             self.plan_path_to_station(map);
         }
         
-        // Pour les collecteurs, vérifier s'il reste des ressources à collecter
+        // NOTE - For collectors, check if resources remain to collect
         if self.robot_type != RobotType::Explorer && self.mode == RobotMode::Exploring {
             // Vérifier d'abord si on peut voir des ressources (exploration suffisante)
             if let Some(_resource_pos) = self.find_nearest_known_resource(map, station) {
@@ -449,7 +292,7 @@ impl Robot {
             }
         }
         
-        // Si à la station, recharger, synchroniser et changer de mode
+        // NOTE - If at station, recharge, sync, and change mode
         if self.x == self.home_station_x && self.y == self.home_station_y {
             // Recharger et décharger
             self.energy = self.max_energy;
@@ -491,7 +334,7 @@ impl Robot {
             }
         }
         
-        // Logique de déplacement selon le mode
+        // NOTE - Logique de déplacement selon le mode
         match self.mode {
             RobotMode::Idle => {
                 // Pour les explorateurs : si l'exploration est terminée, rester à la station
@@ -580,11 +423,11 @@ impl Robot {
             }
         }
         
-        // Mettre à jour la mémoire
+        // NOTE - Mettre à jour la mémoire
         self.update_memory(map, station);
     }
     
-    // Déplacement d'exploration intelligent - VERSION AMÉLIORÉE
+    // NOTE - Smart exploration movement (improved version)
     fn explore_move(&mut self, map: &Map) {
         // Pour l'explorateur, utiliser une stratégie plus agressive de recherche de cases non explorées
         if self.robot_type == RobotType::Explorer {
@@ -595,7 +438,7 @@ impl Robot {
         }
     }
     
-    // Nouvelle fonction spécifique pour l'explorateur
+    // NOTE - Explorer-specific movement logic
     fn explorer_specific_move(&mut self, map: &Map) {
         // Chercher les cases non explorées sur TOUTE la carte (pas juste à proximité)
         let mut unexplored_tiles = Vec::new();
@@ -636,7 +479,7 @@ impl Robot {
         self.intelligent_random_move(map);
     }
     
-    // Mouvement aléatoire plus intelligent pour l'explorateur
+    // NOTE - Intelligent random move for explorer
     fn intelligent_random_move(&mut self, map: &Map) {
         let mut possible_moves = Vec::new();
         
@@ -689,7 +532,7 @@ impl Robot {
         }
     }
     
-    // Fonction explore_move originale renommée pour les autres robots
+    // NOTE - Standard explore move for other robots
     fn standard_explore_move(&mut self, map: &Map) {
         // Logique originale mais avec une portée réduite pour les non-explorateurs
         let mut unexplored_tiles = Vec::new();
@@ -744,7 +587,7 @@ impl Robot {
         }
     }
     
-    // NOUVELLE FONCTION: Trouve la ressource la plus proche dans les zones EXPLORÉES
+    // NOTE - Find nearest known resource in explored areas
     fn find_nearest_known_resource(&self, map: &Map, station: &Station) -> Option<(usize, usize)> {
         let target_resource = match self.robot_type {
             RobotType::Explorer => return None,
@@ -772,7 +615,7 @@ impl Robot {
         nearest
     }
     
-    // Collecte de ressources selon le type de robot
+    // NOTE - Collect resources based on robot type
     fn collect_resources(&mut self, map: &mut Map) {
         let tile = map.get_tile(self.x, self.y);
         
@@ -813,7 +656,7 @@ impl Robot {
         }
     }
     
-    // Vérifier s'il faut retourner à la station
+    // NOTE - Check if robot should return to station
     fn should_return_to_station(&self, map: &Map) -> bool {
         let _ = map;
         
@@ -837,13 +680,13 @@ impl Robot {
         }
     }
     
-    // Planifier un chemin vers la station
+    // NOTE - Plan path to station using A*
     fn plan_path_to_station(&mut self, map: &Map) {
         let target = (self.home_station_x, self.home_station_y);
         self.path_to_station = self.find_path(map, target);
     }
     
-    // Trouver la ressource la plus proche selon le type du robot
+    // NOTE - Find nearest resource for robot type
     fn find_nearest_resource(&self, map: &Map) -> Option<(usize, usize)> {
         let target_resource = match self.robot_type {
             RobotType::Explorer => None,
@@ -876,7 +719,7 @@ impl Robot {
         nearest
     }
     
-    // Algorithme A* pour trouver le chemin optimal
+    // NOTE - A* pathfinding algorithm for optimal route
     fn find_path(&self, map: &Map, target: (usize, usize)) -> VecDeque<(usize, usize)> {
         let start = (self.x, self.y);
         
@@ -959,14 +802,14 @@ impl Robot {
         VecDeque::new()
     }
     
-    // Heuristique pour A* (distance de Manhattan)
+    // NOTE - Heuristic for A* (Manhattan distance)
     fn heuristic(&self, a: (usize, usize), b: (usize, usize)) -> usize {
         let dx = (a.0 as isize - b.0 as isize).abs() as usize;
         let dy = (a.1 as isize - b.1 as isize).abs() as usize;
         dx + dy
     }
     
-    // Déplacement vers une position
+    // NOTE - Move robot to a position
     fn move_to(&mut self, x: usize, y: usize) {
         // Calculer la distance
         let dx = (x as isize - self.x as isize).abs();
@@ -988,7 +831,7 @@ impl Robot {
         self.y = y;
     }
     
-    // Calculer le pourcentage de la carte exploré par ce robot
+    // NOTE - Calculate percentage of map explored by this robot
     pub fn get_exploration_percentage(&self) -> f32 {
         let mut explored_count = 0;
         
@@ -1003,7 +846,7 @@ impl Robot {
         (explored_count as f32 / (MAP_SIZE * MAP_SIZE) as f32) * 100.0
     }
     
-    // Vérifier si l'exploration est terminée (100%)
+    // NOTE - Check if exploration is complete (100%)
     fn is_exploration_complete(&self) -> bool {
         for y in 0..MAP_SIZE {
             for x in 0..MAP_SIZE {

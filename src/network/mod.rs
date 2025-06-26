@@ -20,11 +20,11 @@
 //! - Station operational data and resource management
 //! - Exploration progress and discovery tracking
 
-// Module imports for internal types and serialization
+// NOTE - Module imports for internal types and serialization
 use serde::{Serialize, Deserialize};
 use crate::types::{MAP_SIZE, TileType, RobotType, RobotMode};
 
-/// Network-serializable representation of the exploration map data.
+/// NOTE - Network-serializable representation of the exploration map data.
 /// 
 /// This structure contains all information necessary to reconstruct the
 /// exploration map on remote monitoring systems. It includes terrain layout,
@@ -71,7 +71,7 @@ pub struct MapData {
     pub station_y: usize,
 }
 
-/// Network-serializable representation of individual robot status and performance.
+/// NOTE - Network-serializable representation of individual robot status and performance.
 /// 
 /// This structure contains comprehensive information about a single robot's
 /// current state, including position, energy, inventory, and operational mode.
@@ -168,7 +168,7 @@ pub struct RobotData {
     pub exploration_percentage: f32,
 }
 
-/// Network-serializable representation of central station status and operations.
+/// NOTE - Network-serializable representation of central station status and operations.
 /// 
 /// This structure contains comprehensive information about the mission's central
 /// command facility, including resource stockpiles, operational metrics, and
@@ -273,7 +273,7 @@ pub struct StationData {
     pub mission_complete: bool,
 }
 
-/// Network-serializable representation of explored tiles.
+/// NOTE - Network-serializable representation of explored tiles.
 /// Used to transmit which tiles have been explored by the station.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ExplorationData {
@@ -281,7 +281,7 @@ pub struct ExplorationData {
     pub explored_tiles: Vec<Vec<bool>>,
 }
 
-/// Complete simulation state for network transmission.
+/// NOTE - Complete simulation state for network transmission.
 /// Bundles all relevant data for a single simulation tick.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SimulationState {
@@ -292,7 +292,7 @@ pub struct SimulationState {
     pub iteration: u32,
 }
 
-/// Global network configuration constants for reliable communication.
+/// NOTE - Global network configuration constants for reliable communication.
 /// 
 /// These constants define the communication parameters used throughout
 /// the EREEA network protocol to ensure consistent and reliable data
@@ -320,7 +320,7 @@ pub const DEFAULT_PORT: u16 = 8080;
 /// Current simulation data typically uses 10-50KB per transmission
 pub const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
 
-// Fonction utilitaire : convertir Map vers MapData pour transmission réseau
+// NOTE - Utility: Convert Map to MapData for network
 pub fn create_map_data(map: &crate::map::Map) -> MapData {
     MapData {
         tiles: map.tiles.clone(),           // Copie de la grille des tuiles
@@ -329,7 +329,7 @@ pub fn create_map_data(map: &crate::map::Map) -> MapData {
     }
 }
 
-/// Fonction utilitaire : convertir Robot vers RobotData pour transmission réseau
+// NOTE - Utility: Convert Robot to RobotData for network
 pub fn create_robot_data(robot: &crate::robot::Robot) -> RobotData {
     RobotData {
         id: robot.id,
@@ -345,7 +345,7 @@ pub fn create_robot_data(robot: &crate::robot::Robot) -> RobotData {
     }
 }
 
-/// Fonction utilitaire : convertir Station vers StationData pour transmission réseau
+// NOTE - Utility: Convert Station to StationData for network
 pub fn create_station_data(station: &crate::station::Station, map: &crate::map::Map) -> StationData {
     StationData {
         energy_reserves: station.energy_reserves,
@@ -359,7 +359,7 @@ pub fn create_station_data(station: &crate::station::Station, map: &crate::map::
     }
 }
 
-/// Fonction utilitaire : créer les données d'exploration pour transmission réseau
+// NOTE - Utility: Create exploration data for network
 pub fn create_exploration_data(station: &crate::station::Station) -> ExplorationData {
     let mut explored_tiles = vec![vec![false; MAP_SIZE]; MAP_SIZE];
     
@@ -375,7 +375,7 @@ pub fn create_exploration_data(station: &crate::station::Station) -> Exploration
     }
 }
 
-/// Fonction principale : créer l'état complet de simulation pour transmission
+// NOTE - Utility: Create complete simulation state for network
 pub fn create_simulation_state(
     map: &crate::map::Map, 
     station: &crate::station::Station, 

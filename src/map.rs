@@ -116,72 +116,67 @@ impl Map {
     /// assert_eq!(map1.station_y, MAP_SIZE / 2);
     /// ```
     pub fn new() -> Self {
-        // Generate unique random seed for procedural generation
-        // This ensures each game session has a different map layout
+        // NOTE - Generate unique random seed for procedural generation
         let seed: u32 = rand::thread_rng().r#gen();
         let perlin = Perlin::new(seed);
         
-        // Initialize empty map grid
+        // NOTE - Initialize empty map grid
         let mut tiles = vec![vec![TileType::Empty; MAP_SIZE]; MAP_SIZE];
         
-        // Calculate station position at map center for optimal robot deployment
+        // NOTE - Calculate station position at map center for optimal robot deployment
         let station_x = MAP_SIZE / 2;
         let station_y = MAP_SIZE / 2;
         
-        // First pass: Generate base terrain using Perlin noise
-        // Perlin noise creates natural-looking terrain patterns
+        // NOTE - First pass: Generate base terrain using Perlin noise
         for y in 0..MAP_SIZE {
             for x in 0..MAP_SIZE {
-                // Normalize coordinates to 0.0-1.0 range for noise function
+                // NOTE - Normalize coordinates to 0.0-1.0 range for noise function
                 let nx = x as f64 / MAP_SIZE as f64;
                 let ny = y as f64 / MAP_SIZE as f64;
                 
-                // Sample Perlin noise with 4x frequency for detailed features
+                // NOTE - Sample Perlin noise with 4x frequency for detailed features
                 let value = perlin.get([nx * 4.0, ny * 4.0]);
                 
-                // Convert noise value to tile type using threshold system
-                // Higher thresholds create rarer terrain types
+                // NOTE - Convert noise value to tile type using threshold system
                 tiles[y][x] = if value > 0.5 {
-                    TileType::Obstacle       // 25% obstacles for navigation challenge
+                    TileType::Obstacle       // NOTE - 25% obstacles for navigation challenge
                 } else if value > 0.3 {
-                    TileType::Energy         // 20% energy deposits
+                    TileType::Energy         // NOTE - 20% energy deposits
                 } else if value > 0.1 {
-                    TileType::Mineral        // 20% mineral deposits  
+                    TileType::Mineral        // NOTE - 20% mineral deposits  
                 } else if value > 0.0 {
-                    TileType::Scientific     // 10% scientific points
+                    TileType::Scientific     // NOTE - 10% scientific points
                 } else {
-                    TileType::Empty          // 25% empty traversable space
+                    TileType::Empty          // NOTE - 25% empty traversable space
                 };
             }
         }
         
-        // Clear area around station to ensure robot deployment space
-        // Station needs obstacle-free zone for robot movement and operations
+        // NOTE - Clear area around station to ensure robot deployment space
         for dy in -2..=2 {
             for dx in -2..=2 {
-                // Calculate coordinates with boundary clamping
+                // NOTE - Calculate coordinates with boundary clamping
                 let sx = (station_x as isize + dx).clamp(0, MAP_SIZE as isize - 1) as usize;
                 let sy = (station_y as isize + dy).clamp(0, MAP_SIZE as isize - 1) as usize;
                 
-                // Force station area to be empty (traversable)
+                // NOTE - Force station area to be empty (traversable)
                 tiles[sy][sx] = TileType::Empty;
             }
         }
         
-        // Create initial map structure
+        // NOTE - Create initial map structure
         let mut map = Self {
             tiles,
             station_x,
             station_y,
         };
         
-        // Accessibility pass: Ensure all resources can be reached from station
-        // This prevents generation of isolated resource deposits
+        // NOTE - Accessibility pass: Ensure all resources can be reached from station
         let resources = map.find_all_resources();
         for (res_x, res_y) in resources {
-            // Check if each resource is reachable from station
+            // NOTE - Check if each resource is reachable from station
             if !map.is_accessible(station_x, station_y, res_x, res_y) {
-                // Create pathway if resource is isolated
+                // NOTE - Create pathway if resource is isolated
                 map.create_path(station_x, station_y, res_x, res_y);
             }
         }
@@ -217,12 +212,12 @@ impl Map {
     /// assert_eq!(invalid, TileType::Obstacle);
     /// ```
     pub fn get_tile(&self, x: usize, y: usize) -> TileType {
-        // Bounds checking: treat off-map areas as impassable obstacles
+        // NOTE - Bounds checking: treat off-map areas as impassable obstacles
         if x >= MAP_SIZE || y >= MAP_SIZE {
             return TileType::Obstacle;
         }
         
-        // Return actual tile type for valid coordinates
+        // NOTE - Return actual tile type for valid coordinates
         self.tiles[y][x].clone()
     }
     
@@ -253,11 +248,11 @@ impl Map {
     /// }
     /// ```
     pub fn is_valid_position(&self, x: usize, y: usize) -> bool {
-        // Must be within map boundaries AND not an obstacle
+        // NOTE - Must be within map boundaries AND not an obstacle
         x < MAP_SIZE && y < MAP_SIZE && self.tiles[y][x] != TileType::Obstacle
     }
     
-    // Consommer une ressource à une position (ne modifie que les ressources)
+    // NOTE - Consume a resource at a position (only modifies resources)
     pub fn consume_resource(&mut self, x: usize, y: usize) {
         if x < MAP_SIZE && y < MAP_SIZE {
             match self.tiles[y][x] {
@@ -269,6 +264,7 @@ impl Map {
         }
     }
     
+    // NOTE - Find all resource positions on the map
     fn find_all_resources(&self) -> Vec<(usize, usize)> {
         let mut resources = Vec::new();
         for y in 0..MAP_SIZE {
@@ -284,17 +280,17 @@ impl Map {
         resources
     }
     
-    // Vérifie si une position est accessible depuis une autre (BFS)
+    // NOTE - Check if a position is accessible from another (BFS)
     fn is_accessible(&self, start_x: usize, start_y: usize, target_x: usize, target_y: usize) -> bool {
         let mut visited = vec![vec![false; MAP_SIZE]; MAP_SIZE];
         let mut queue = VecDeque::new();
         
-         // Point de départ
+        // NOTE - Start point
         queue.push_back((start_x, start_y));
         visited[start_y][start_x] = true;
         
         while let Some((x, y)) = queue.pop_front() {
-            // Si on a atteint la cible
+            // NOTE - If target reached
             if x == target_x && y == target_y {
                 return true;
             }
@@ -305,7 +301,7 @@ impl Map {
                         continue;
                     }
                     
-                    // Explorer les voisins
+                    // NOTE - Explore neighbors
                     let nx = x as isize + dx;
                     let ny = y as isize + dy;
                     
@@ -325,32 +321,32 @@ impl Map {
         false
     }
     
-    // Crée un chemin entre deux points en supprimant les obstacles
+    // NOTE - Create a path between two points by removing obstacles
     fn create_path(&mut self, start_x: usize, start_y: usize, target_x: usize, target_y: usize) {
-        // Utiliser la distance de Manhattan pour créer un chemin approximatif
+        // NOTE - Use Manhattan distance to create an approximate path
         let mut current_x = start_x;
         let mut current_y = start_y;
         
         while current_x != target_x || current_y != target_y {
-            // Décider de la direction à prendre
+            // NOTE - Decide direction to move
             let move_horizontal = rand::thread_rng().gen_bool(0.5);
             
             if move_horizontal && current_x != target_x {
-                // Déplacement horizontal
+                // NOTE - Move horizontally
                 if current_x < target_x {
                     current_x += 1;
                 } else {
                     current_x -= 1;
                 }
             } else if current_y != target_y {
-                // Déplacement vertical
+                // NOTE - Move vertically
                 if current_y < target_y {
                     current_y += 1;
                 } else {
                     current_y -= 1;
                 }
             } else if current_x != target_x {
-                // Déplacement horizontal forcé
+                // NOTE - Forced horizontal move
                 if current_x < target_x {
                     current_x += 1;
                 } else {
@@ -358,7 +354,7 @@ impl Map {
                 }
             }
             
-            // Si c'est un obstacle, le transformer en case vide
+            // NOTE - If obstacle, convert to empty tile
             if self.tiles[current_y][current_x] == TileType::Obstacle {
                 self.tiles[current_y][current_x] = TileType::Empty;
             }

@@ -16,37 +16,39 @@ impl Display {
     pub fn render(map: &Map, station: &Station, robots: &Vec<Robot>) -> Result<()> {
         let mut stdout = stdout();
         
-        // Effacer l'écran
+        // NOTE - Clear the screen
         stdout.execute(Clear(ClearType::All))?;
 
-        // Dessiner une bordure autour de la carte
+        // NOTE - Draw border around the map
         let map_top = 0;
         let map_left = 0;
         let map_width = MAP_SIZE as u16 * 2;
 
-        // Bordure supérieure
+        // NOTE - Draw top border
         stdout.execute(MoveTo(map_left, map_top))?;
         stdout.execute(SetForegroundColor(Color::DarkGrey))?;
         print!("╔");
         for _ in 0..map_width { print!("═"); }
         println!("╗");
 
-        // Affichage de la carte avec bordures latérales
+        // NOTE - Draw map rows with side borders
         for y in 0..MAP_SIZE {
             stdout.execute(MoveTo(map_left, map_top + 1 + y as u16))?;
             print!("║");
             for x in 0..MAP_SIZE {
-                // Vérifier si un robot est sur cette case
+                // NOTE - Check if a robot is on this tile
                 let robot_here = robots.iter().find(|r| r.x == x && r.y == y);
                 
                 if x == map.station_x && y == map.station_y {
+                    // NOTE - Draw station
                     stdout.execute(SetForegroundColor(Color::Yellow))?;
                     print!("🏠");
                 } else if let Some(robot) = robot_here {
+                    // NOTE - Draw robot
                     stdout.execute(SetForegroundColor(Color::AnsiValue(robot.get_display_color())))?;
-                    // Utiliser les emojis pour les robots
                     print!("{}", robot.get_display_char());
                 } else {
+                    // NOTE - Draw terrain/resource or unexplored
                     let base_color = match map.get_tile(x, y) {
                         TileType::Empty => Color::White,
                         TileType::Obstacle => Color::DarkGrey,
@@ -74,13 +76,13 @@ impl Display {
             println!("║");
         }
 
-        // Bordure inférieure
+        // NOTE - Draw bottom border
         stdout.execute(MoveTo(map_left, map_top + 1 + MAP_SIZE as u16))?;
         print!("╚");
         for _ in 0..map_width { print!("═"); }
         println!("╝");
 
-        // Afficher les informations de la station
+        // NOTE - Display station information
         let info_y = map_top + 2 + MAP_SIZE as u16;
         stdout.execute(MoveTo(0, info_y))?;
         stdout.execute(SetForegroundColor(Color::Yellow))?;
@@ -95,7 +97,7 @@ impl Display {
         );
         println!("Statut: {}", station.get_status());
 
-        // Afficher les informations de chaque robot
+        // NOTE - Display robot information
         let robots_y = info_y + 4;
         stdout.execute(MoveTo(0, robots_y))?;
         stdout.execute(SetForegroundColor(Color::Cyan))?;
@@ -122,7 +124,7 @@ impl Display {
             );
         }
 
-        // Afficher la légende MISE À JOUR avec emojis
+        // NOTE - Display legend with emojis
         let legend_y = robots_y + 2 + robots.len() as u16;
         stdout.execute(MoveTo(0, legend_y))?;
         stdout.execute(SetForegroundColor(Color::White))?;
@@ -155,14 +157,14 @@ impl Display {
     pub fn render_mission_complete(_map: &Map, station: &Station, robots: &Vec<Robot>) -> Result<()> {
         let mut stdout = stdout();
         
-        // Effacer complètement l'écran
+        // NOTE - Clear the screen for mission complete
         stdout.execute(Clear(ClearType::All))?;
         
-        // Calculer la position centrale pour le message
+        // NOTE - Centered mission complete message
         let center_x = 5;
         let center_y = 3;
         
-        // Créer un cadre pour le message de mission terminée - VERSION AMÉLIORÉE
+        // NOTE - Draw mission complete box
         let message_lines = vec![
             "╔══════════════════════════════════════════════════════════════════╗",
             "║                                                                  ║",
@@ -187,14 +189,14 @@ impl Display {
             "╚══════════════════════════════════════════════════════════════════╝",
         ];
         
-        // Afficher le message au centre de l'écran
+        // NOTE - Print mission complete message
         for (i, line) in message_lines.iter().enumerate() {
             stdout.execute(MoveTo(center_x, center_y + i as u16))?;
             stdout.execute(SetForegroundColor(Color::Yellow))?;
             print!("{}", line);
         }
         
-        // Afficher les statistiques finales
+        // NOTE - Print final statistics
         stdout.execute(MoveTo(center_x + 5, center_y + message_lines.len() as u16 + 2))?;
         stdout.execute(SetForegroundColor(Color::Cyan))?;
         println!("🎯 STATISTIQUES DE LA MISSION:");
@@ -215,7 +217,7 @@ impl Display {
         stdout.execute(MoveTo(center_x + 8, center_y + message_lines.len() as u16 + 8))?;
         println!("⚔️  Conflits résolus: {}", station.conflict_count);
         
-        // Afficher les types de robots utilisés
+        // NOTE - Print robot types used
         stdout.execute(MoveTo(center_x + 8, center_y + message_lines.len() as u16 + 10))?;
         stdout.execute(SetForegroundColor(Color::White))?;
         println!("🛠️  ROBOTS UTILISÉS:");
@@ -234,12 +236,12 @@ impl Display {
         stdout.execute(SetForegroundColor(Color::White))?;
         println!("- Tous revenus sains et saufs!");
         
-        // Instructions pour quitter
+        // NOTE - Print exit instructions
         stdout.execute(MoveTo(center_x + 15, center_y + message_lines.len() as u16 + 15))?;
         stdout.execute(SetForegroundColor(Color::Red))?;
         println!("Appuyez sur Ctrl+C pour quitter...");
         
-        // Petite animation bonus avec les emojis de robots
+        // NOTE - Print robot emoji animation
         stdout.execute(MoveTo(center_x + 20, center_y + message_lines.len() as u16 + 17))?;
         stdout.execute(SetForegroundColor(Color::AnsiValue(9)))?;
         print!("🤖 ");

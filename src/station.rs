@@ -211,7 +211,7 @@ impl Station {
     /// assert_eq!(station.get_exploration_percentage(), 0.0);
     /// ```
     pub fn new() -> Self {
-        // Initialize exploration memory grid with unexplored state for all tiles
+        // NOTE - Initializing global exploration memory grid
         let mut global_memory = Vec::with_capacity(MAP_SIZE);
         for _ in 0..MAP_SIZE {
             let row = vec![
@@ -226,6 +226,7 @@ impl Station {
             global_memory.push(row);
         }
         
+        // NOTE - Station struct initialization with default values
         Self {
             energy_reserves: 100,              // Starting energy for initial operations
             collected_minerals: 0,             // No minerals until robots collect them
@@ -259,6 +260,7 @@ impl Station {
     /// assert_eq!(station.current_time, 1);
     /// ```
     pub fn tick(&mut self) {
+        // NOTE - Advancing simulation time
         self.current_time += 1;
     }
     
@@ -293,23 +295,23 @@ impl Station {
     /// }
     /// ```
     pub fn try_create_robot(&mut self, map: &Map) -> Option<Robot> {
-        // Coûts nécessaires pour créer un robot
+        // NOTE - Robot creation resource cost check
         let energy_cost = 50;   // Énergie requise
         let mineral_cost = 15;  // Minerais requis
         
-        // Vérifier si on a assez de ressources
+        // NOTE - Checking if enough resources to create a robot
         if self.energy_reserves >= energy_cost && self.collected_minerals >= mineral_cost {
-            // Déterminer le type de robot le plus utile actuellement
+            // NOTE - Determining most needed robot type
             let robot_type = self.determine_needed_robot_type(map);
             
-            // Consommer les ressources nécessaires
+            // NOTE - Consuming resources for robot creation
             self.energy_reserves -= energy_cost;
             self.collected_minerals -= mineral_cost;
             
             println!("Station: Création d'un nouveau robot #{} de type {:?}", 
                      self.next_robot_id, robot_type);
             
-            // Créer le robot avec la mémoire globale actuelle
+            // NOTE - Creating robot with current global memory
             let new_robot = Robot::new_with_memory(
                 map.station_x, 
                 map.station_y, 
@@ -320,7 +322,7 @@ impl Station {
                 self.global_memory.clone()
             );
             
-            // Incrémenter l'ID pour le prochain robot
+            // NOTE - Incrementing robot ID counter
             self.next_robot_id += 1;
             
             return Some(new_robot);
@@ -353,14 +355,15 @@ impl Station {
     /// assert_eq!(station.determine_needed_robot_type(&map), RobotType::EnergyCollector);
     /// ```
     fn determine_needed_robot_type(&self, map: &Map) -> RobotType {
+        // NOTE - Calculating exploration percentage
         let exploration_percentage = self.get_exploration_percentage();
         
-        // Phase 1: Exploration prioritaire (0-50%)
+        // NOTE - Phase 1: Prioritize exploration
         if exploration_percentage < 50.0 {
             return RobotType::Explorer;
         }
         
-        // Compter les ressources restantes sur la carte
+        // NOTE - Counting remaining resources on the map
         let mut energy_count = 0;
         let mut mineral_count = 0;
         let mut scientific_count = 0;
@@ -376,25 +379,23 @@ impl Station {
             }
         }
         
-        // Phase 2: Collecte d'énergie et minerais prioritaire (50-80%)
+        // NOTE - Phase 2: Prioritize energy and mineral collection
         if exploration_percentage < 80.0 {
-            // Prioriser énergie et minerais
             if energy_count > 0 && (energy_count <= 3 || self.energy_reserves < 100) {
                 return RobotType::EnergyCollector;
             }
             if mineral_count > 0 && (mineral_count <= 5 || self.collected_minerals < 30) {
                 return RobotType::MineralCollector;
             }
-            // Sinon, continuer l'exploration
             return RobotType::Explorer;
         }
         
-        // Phase 3: Collecte scientifique (80%+)
+        // NOTE - Phase 3: Prioritize scientific collection
         if scientific_count > 0 && self.energy_reserves >= 100 {
             return RobotType::ScientificCollector;
         }
         
-        // Si plus de ressources scientifiques, prioriser le reste
+        // NOTE - Fallback: prioritize remaining resources
         if energy_count > 0 {
             return RobotType::EnergyCollector;
         }
@@ -402,7 +403,7 @@ impl Station {
             return RobotType::MineralCollector;
         }
         
-        // Par défaut, créer un explorateur pour finir l'exploration
+        // NOTE - Default: create explorer to finish exploration
         RobotType::Explorer
     }
     
@@ -432,24 +433,24 @@ impl Station {
     /// station.share_knowledge(&mut robot);
     /// ```
     pub fn share_knowledge(&mut self, robot: &mut Robot) {
-        // Ne synchroniser que si le robot est à la station ET si ce n'est pas déjà fait récemment
+        // NOTE - Only synchronize if robot is at the station
         if robot.x == robot.home_station_x && robot.y == robot.home_station_y {
             let mut conflicts = 0;
             let mut changes_made = false;
             
-            // Le robot partage ses connaissances avec la station
+            // NOTE - Robot shares its knowledge with the station
             for y in 0..MAP_SIZE {
                 for x in 0..MAP_SIZE {
                     if robot.memory[y][x].explored {
                         if self.global_memory[y][x].explored {
-                            // CONFLIT: Résolution par timestamp (le plus récent gagne)
+                            // NOTE - Conflict: resolve by timestamp
                             if robot.memory[y][x].timestamp > self.global_memory[y][x].timestamp {
                                 self.global_memory[y][x] = robot.memory[y][x].clone();
                                 conflicts += 1;
                                 changes_made = true;
                             }
                         } else {
-                            // Pas de conflit, ajouter les connaissances du robot
+                            // NOTE - No conflict, add robot's knowledge
                             self.global_memory[y][x] = robot.memory[y][x].clone();
                             changes_made = true;
                         }
@@ -457,7 +458,7 @@ impl Station {
                 }
             }
             
-            // Le robot reçoit toutes les connaissances globales
+            // NOTE - Robot receives all global knowledge
             for y in 0..MAP_SIZE {
                 for x in 0..MAP_SIZE {
                     if self.global_memory[y][x].explored {
@@ -466,7 +467,7 @@ impl Station {
                 }
             }
             
-            // Mettre à jour les statistiques de conflits seulement si des changements ont été faits
+            // NOTE - Update conflict statistics if changes were made
             if changes_made {
                 self.conflict_count += conflicts;
                 
@@ -502,6 +503,7 @@ impl Station {
     /// assert_eq!(station.collected_scientific_data, 10);
     /// ```
     pub fn deposit_resources(&mut self, minerals: u32, scientific_data: u32) {
+        // NOTE - Depositing minerals and scientific data
         self.collected_minerals += minerals;
         self.collected_scientific_data += scientific_data;
         self.energy_reserves += minerals; // Conversion minerais -> énergie
@@ -525,6 +527,7 @@ impl Station {
     /// println!("Status Report: {}", status_report);
     /// ```
     pub fn get_status(&self) -> String {
+        // NOTE - Generating station status report string
         let exploration_pct = self.get_exploration_percentage();
         
         let status = if exploration_pct >= 100.0 && self.are_all_resources_collected_placeholder() {
@@ -549,7 +552,7 @@ impl Station {
 
     // Fonction temporaire pour éviter les erreurs de compilation
     fn are_all_resources_collected_placeholder(&self) -> bool {
-        // Cette fonction sera remplacée par le paramètre map dans les appels réels
+        // NOTE - Placeholder for resource collection check
         false
     }
     
@@ -577,6 +580,7 @@ impl Station {
     /// assert_eq!(station.get_exploration_percentage(), 12.5);
     /// ```
     pub fn get_exploration_percentage(&self) -> f32 {
+        // NOTE - Counting explored tiles in global memory
         let mut explored_count = 0;
         
         for y in 0..MAP_SIZE {
@@ -618,21 +622,20 @@ impl Station {
     /// assert!(station.is_all_missions_complete(&map, &robots));
     /// ```
     pub fn is_all_missions_complete(&self, map: &Map, robots: &Vec<Robot>) -> bool {
-        // 1. Vérifier que la carte est explorée à 100%
+        // NOTE - Check if map is fully explored
         if self.get_exploration_percentage() < 100.0 {
             return false;
         }
         
-        // 2. Vérifier qu'il n'y a plus de ressources sur la carte
+        // NOTE - Check if all resources are collected
         if !self.are_all_resources_collected(map) {
             return false;
         }
         
-        // 3. Vérifier que tous les robots sont revenus à la base ou en mode approprié
+        // NOTE - Check if all robots are at the station and idle
         for robot in robots {
             match robot.robot_type {
                 RobotType::Explorer => {
-                    // L'explorateur doit être en mode Idle à la station
                     if robot.mode != crate::types::RobotMode::Idle || 
                        robot.x != robot.home_station_x || 
                        robot.y != robot.home_station_y {
@@ -640,7 +643,6 @@ impl Station {
                     }
                 },
                 _ => {
-                    // Les collecteurs doivent être en mode Idle à la station (plus de ressources à collecter)
                     if robot.mode != crate::types::RobotMode::Idle || 
                        robot.x != robot.home_station_x || 
                        robot.y != robot.home_station_y {
@@ -677,12 +679,13 @@ impl Station {
     /// assert!(station.is_mission_complete(&map));
     /// ```
     pub fn is_mission_complete(&self, map: &Map) -> bool {
-        // Vérifier qu'il n'y a plus de ressources sur la carte
+        // NOTE - Check if all resources are collected
         self.are_all_resources_collected(map)
     }
     
     /// Vérifier que toutes les ressources ont été collectées
     fn are_all_resources_collected(&self, map: &Map) -> bool {
+        // NOTE - Scanning map for remaining resources
         for y in 0..MAP_SIZE {
             for x in 0..MAP_SIZE {
                 match map.get_tile(x, y) {
